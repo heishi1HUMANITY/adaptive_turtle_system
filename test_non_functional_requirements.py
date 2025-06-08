@@ -73,7 +73,7 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         with open(self.config_file_path, 'w') as f:
             json.dump(data, f, indent=2)
 
-    def _create_dummy_historical_data(self, filepath, rows=50):
+    def _create_dummy_historical_data(self, filepath, rows=20): # Changed default rows from 50 to 20
         data = {
             'Timestamp': pd.to_datetime(['2023-01-{:02d} 00:00:00'.format(i+1) for i in range(rows)]),
             'Open': [1.1000 + i*0.001 for i in range(rows)],

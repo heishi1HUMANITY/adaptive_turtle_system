@@ -48,6 +48,45 @@ print(f"Market: {config.get('market')}")
 print(f"Timeframe: {config.get('timeframe')}")
 ```
 
+### Additional Configuration Options
+
+Beyond the basic trading parameters, `config.json` can also include settings for system behavior:
+
+**Logging Configuration:**
+
+The `logging` object configures the system's logging behavior.
+
+*   `log_file_path` (string): Specifies the path to the log file where trading activities and system messages will be recorded.
+    *   Example: `"log_file_path": "trading_system.log"`
+*   `log_level` (string): Defines the minimum severity level of messages to be logged. Common values include:
+    *   `"DEBUG"`: Detailed information, typically of interest only when diagnosing problems.
+    *   `"INFO"`: Confirmation that things are working as expected.
+    *   `"WARNING"`: An indication that something unexpected happened, or indicative of some problem in the near future (e.g., ‘disk space low’). The software is still working as expected.
+    *   `"ERROR"`: Due to a more serious problem, the software has not been able to perform some function.
+    *   `"CRITICAL"`: A serious error, indicating that the program itself may be unable to continue running.
+    *   Default: If not specified, the system might default to "INFO".
+    *   Example: `"log_level": "INFO"`
+
+**Example `logging` object:**
+```json
+{
+  "logging": {
+    "log_file_path": "trading_system.log",
+    "log_level": "INFO"
+  }
+}
+```
+
+**Emergency Stop:**
+
+*   `emergency_stop` (boolean): A flag to control new trade entries.
+    *   Purpose: When set to `true`, the system will not open any new positions. Existing positions will continue to be managed (i.e., stop-loss and take-profit orders will still be processed). This allows for a controlled halt of new trading activity without immediately liquidating the portfolio.
+    *   Values:
+        *   `true`: Activates the emergency stop, preventing new trades.
+        *   `false`: Deactivates the emergency stop, allowing new trades as per strategy logic.
+    *   Default: If the key is missing from `config.json`, the system defaults to `false` (normal operation).
+    *   Example: `"emergency_stop": false`
+
 ### Data Acquisition
 
 The `data_loader.py` module can read historical data from CSV files into a Pandas DataFrame. The `Timestamp` column is automatically parsed as datetime objects.

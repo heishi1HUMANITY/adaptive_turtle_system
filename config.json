@@ -1,0 +1,9 @@
+{
+  "market": "EUR/USD",
+  "timeframe": "H1",
+  "stop_loss_atr_multiplier": 2,
+  "take_profit_atr_multiplier": 10,
+  "risk_percentage_per_trade": 1,
+  "max_units_per_market": 4,
+  "max_total_risk_percentage": 5
+}

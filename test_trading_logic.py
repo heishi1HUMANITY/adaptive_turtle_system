@@ -274,7 +274,7 @@ class TestTradingLogic(unittest.TestCase):
     # --- Tests for execute_order function ---
     def test_execute_market_buy_order(self):
         order = Order(order_id="mkt_buy_01", symbol=self.test_symbol, order_type="market", trade_action="buy", quantity=self.execute_order_lot_size )
-        executed_order = execute_order(order, self.market_price_buy, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size)
+        executed_order = execute_order(order, self.market_price_buy, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size, datetime.now())
         self.assertEqual(executed_order.status, "filled")
         expected_fill_price = self.market_price_buy + (self.execute_order_slippage_pips * self.execute_order_pip_point_value)
         self.assertAlmostEqual(executed_order.fill_price, expected_fill_price)
@@ -285,7 +285,7 @@ class TestTradingLogic(unittest.TestCase):
 
     def test_execute_market_sell_order(self):
         order = Order(order_id="mkt_sell_01", symbol=self.test_symbol, order_type="market", trade_action="sell", quantity=50000 )
-        executed_order = execute_order(order, self.market_price_sell, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size)
+        executed_order = execute_order(order, self.market_price_sell, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size, datetime.now())
         self.assertEqual(executed_order.status, "filled")
         expected_fill_price = self.market_price_sell - (self.execute_order_slippage_pips * self.execute_order_pip_point_value)
         self.assertAlmostEqual(executed_order.fill_price, expected_fill_price)
@@ -296,7 +296,7 @@ class TestTradingLogic(unittest.TestCase):
 
     def test_execute_stop_buy_order(self):
         order = Order(order_id="stop_buy_01", symbol=self.test_symbol, order_type="stop", trade_action="buy", quantity=self.execute_order_lot_size, order_price=self.stop_price_buy)
-        executed_order = execute_order(order, self.stop_price_buy, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size)
+        executed_order = execute_order(order, self.stop_price_buy, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size, datetime.now())
         self.assertEqual(executed_order.status, "filled")
         expected_fill_price = self.stop_price_buy + (self.execute_order_slippage_pips * self.execute_order_pip_point_value)
         self.assertAlmostEqual(executed_order.fill_price, expected_fill_price)
@@ -304,7 +304,7 @@ class TestTradingLogic(unittest.TestCase):
 
     def test_execute_stop_sell_order(self):
         order = Order(order_id="stop_sell_01", symbol=self.test_symbol, order_type="stop", trade_action="sell", quantity=self.execute_order_lot_size, order_price=self.stop_price_sell)
-        executed_order = execute_order(order, self.stop_price_sell, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size)
+        executed_order = execute_order(order, self.stop_price_sell, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size, datetime.now())
         self.assertEqual(executed_order.status, "filled")
         expected_fill_price = self.stop_price_sell - (self.execute_order_slippage_pips * self.execute_order_pip_point_value)
         self.assertAlmostEqual(executed_order.fill_price, expected_fill_price)
@@ -314,7 +314,9 @@ class TestTradingLogic(unittest.TestCase):
         order_fill_time = datetime(2023, 1, 1, 12, 0, 0)
         order = Order(order_id="filled_01", symbol=self.test_symbol, order_type="market", trade_action="buy", quantity=10000, status="filled", fill_price=1.20000, commission=0.5 )
         order.timestamp_filled = order_fill_time
-        executed_order = execute_order(order, self.market_price_buy, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size)
+        # For already filled/cancelled orders, execute_order should not change timestamp_filled.
+        # The passed datetime.now() here is effectively ignored by the function logic for non-pending orders.
+        executed_order = execute_order(order, self.market_price_buy, self.execute_order_slippage_pips, self.execute_order_commission_per_lot, self.execute_order_pip_point_value, self.execute_order_lot_size, datetime.now())
         self.assertEqual(executed_order.status, "filled")
         self.assertEqual(executed_order.fill_price, 1.20000)
         self.assertEqual(executed_order.commission, 0.5)
@@ -322,7 +324,7 @@ class TestTradingLogic(unittest.TestCase):
 
     def test_execute_order_zero_slippage_commission(self):
         order = Order(order_id="mkt_buy_zero", symbol=self.test_symbol, order_type="market", trade_action="buy", quantity=self.execute_order_lot_size)
-        executed_order = execute_order(order, self.market_price_buy, 0.0, 0.0, self.execute_order_pip_point_value, self.execute_order_lot_size)
+        executed_order = execute_order(order, self.market_price_buy, 0.0, 0.0, self.execute_order_pip_point_value, self.execute_order_lot_size, datetime.now())
         self.assertEqual(executed_order.status, "filled")
         self.assertAlmostEqual(executed_order.fill_price, self.market_price_buy)
         self.assertAlmostEqual(executed_order.commission, 0.0)

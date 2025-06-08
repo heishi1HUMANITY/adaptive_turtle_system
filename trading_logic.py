@@ -1,6 +1,7 @@
 import pandas as pd
 import math
 from datetime import datetime
+from typing import Union, Optional, List, Dict, Tuple, Any
 
 class Order:
     """
@@ -10,8 +11,9 @@ class Order:
     It holds all information related to a specific trade instruction.
     """
     def __init__(self, order_id: str, symbol: str, order_type: str, trade_action: str,
-                 quantity: float, order_price: float = None, status: str = "pending",
-                 fill_price: float = None, commission: float = 0.0, slippage: float = 0.0):
+                 quantity: float, order_price: Optional[float] = None, status: str = "pending",
+                 fill_price: Optional[float] = None, commission: float = 0.0, slippage: float = 0.0,
+                 timestamp_filled: Optional[datetime] = None): # Added timestamp_filled to signature
         """
         Initializes an Order object.
 
@@ -21,14 +23,15 @@ class Order:
             order_type (str): Type of order, e.g., "market", "stop", "limit".
             trade_action (str): Action of the trade, either "buy" or "sell".
             quantity (float): The amount of the instrument to trade (always positive).
-            order_price (float, optional): The price at which to execute for pending orders.
+            order_price (Optional[float], optional): The price at which to execute for pending orders.
                                            None for market orders. Defaults to None.
             status (str, optional): Current status of the order, e.g., "pending", "filled",
                                     "cancelled". Defaults to "pending".
-            fill_price (float, optional): The price at which the order was filled.
+            fill_price (Optional[float], optional): The price at which the order was filled.
                                           None until filled. Defaults to None.
             commission (float, optional): Commission incurred for this order. Defaults to 0.0.
             slippage (float, optional): Monetary value of slippage incurred for this order. Defaults to 0.0.
+            timestamp_filled (Optional[datetime], optional): Time when the order was filled. Defaults to None.
         """
         self.order_id = order_id
         self.symbol = symbol
@@ -39,7 +42,7 @@ class Order:
         self.status = status  # Current state: "pending", "filled", "cancelled"
         self.fill_price = fill_price  # Actual execution price after filling
         self.timestamp_created = datetime.now()  # Time when the order object was created
-        self.timestamp_filled = None  # Time when the order was successfully filled
+        self.timestamp_filled = timestamp_filled  # Time when the order was successfully filled
         self.commission = commission  # Commission fee for this order
         self.slippage = slippage  # Monetary value of slippage for this order
 
@@ -51,8 +54,8 @@ class Position:
     take-profit levels (if any), and P&L for an open trade.
     """
     def __init__(self, symbol: str, quantity: float, average_entry_price: float,
-                 related_entry_order_id: str, initial_stop_loss_price: float = None,
-                 current_stop_loss_price: float = None, take_profit_price: float = None):
+                 related_entry_order_id: str, initial_stop_loss_price: Optional[float] = None,
+                 current_stop_loss_price: Optional[float] = None, take_profit_price: Optional[float] = None):
         """
         Initializes a Position object.
 
@@ -62,11 +65,11 @@ class Position:
                               Positive for a long position, negative for a short position.
             average_entry_price (float): The average price at which the position was entered.
             related_entry_order_id (str): The ID of the entry order that initially created this position.
-            initial_stop_loss_price (float, optional): The initial stop-loss price set when the position
+            initial_stop_loss_price (Optional[float], optional): The initial stop-loss price set when the position
                                                        was opened or last significantly modified. Defaults to None.
-            current_stop_loss_price (float, optional): The current stop-loss price, which might be
+            current_stop_loss_price (Optional[float], optional): The current stop-loss price, which might be
                                                        adjusted (e.g., trailed). Defaults to None.
-            take_profit_price (float, optional): The take-profit price for this position.
+            take_profit_price (Optional[float], optional): The take-profit price for this position.
                                                  (Note: Current strategy uses Donchian exits, not fixed TP orders).
                                                  Defaults to None.
         """
@@ -76,11 +79,11 @@ class Position:
         self.initial_stop_loss_price = initial_stop_loss_price
         self.current_stop_loss_price = current_stop_loss_price
         self.take_profit_price = take_profit_price  # May not be used if strategy relies on dynamic exits
-        self.unrealized_pnl = 0.0  # Profit or loss if the position were closed at current market prices
-        self.realized_pnl = 0.0  # Profit or loss accumulated from partially or fully closing this position
-        self.last_update_timestamp = datetime.now()  # Timestamp of the last modification or P&L update
-        self.related_entry_order_id = related_entry_order_id # ID of the order that opened/last significantly modified this position
-        self.active_stop_loss_order_id: str | None = None  # ID of the currently active stop-loss order linked to this position
+        self.unrealized_pnl: Optional[float] = 0.0  # Profit or loss if the position were closed at current market prices
+        self.realized_pnl: float = 0.0  # Profit or loss accumulated from partially or fully closing this position
+        self.last_update_timestamp: datetime = datetime.now()  # Timestamp of the last modification or P&L update
+        self.related_entry_order_id: str = related_entry_order_id # ID of the order that opened/last significantly modified this position
+        self.active_stop_loss_order_id: Optional[str] = None  # ID of the currently active stop-loss order linked to this position
 
 def execute_order(order: Order, current_market_price: float, slippage_pips: float,
                   commission_per_lot: float, pip_point_value: float, lot_size: int) -> Order:
@@ -174,10 +177,10 @@ class PortfolioManager:
 
     def open_position(self, symbol: str, trade_action: str, quantity: float,
                         entry_price: float, entry_time: datetime,
-                        stop_loss_price: float, order_id: str,
+                        stop_loss_price: Optional[float], order_id: str,
                         commission: float, slippage_value: float):
         """
-        Creates or updates a Position object after an order is filled.
+        Opens a new position or adds to an existing one for a specified symbol.
         Assumes new entries are for symbols with no existing open position or
         are additions to existing ones in the same direction.
         """
@@ -384,7 +387,7 @@ class PortfolioManager:
         # print(f"Reduced position: {trade_details}, Capital: {self.capital}")
 
 
-    def get_open_position(self, symbol: str) -> Position | None:
+    def get_open_position(self, symbol: str) -> Optional[Position]:
         """
         Retrieves an open position for a given symbol.
 
@@ -392,12 +395,12 @@ class PortfolioManager:
             symbol (str): The symbol of the position to retrieve (e.g., "EUR/USD").
 
         Returns:
-            Position | None: The Position object if an open position exists for the symbol,
-                             otherwise None.
+            Optional[Position]: The Position object if an open position exists for the symbol,
+                                otherwise None.
         """
         return self.positions.get(symbol)
 
-    def update_unrealized_pnl(self, current_prices: dict[str, float]):
+    def update_unrealized_pnl(self, current_prices: Dict[str, float]):
         """
         Updates the unrealized P&L for all currently open positions.
 
@@ -405,7 +408,7 @@ class PortfolioManager:
         and the position's average entry price.
 
         Args:
-            current_prices (dict[str, float]): A dictionary mapping symbols to their
+            current_prices (Dict[str, float]): A dictionary mapping symbols to their
                                                current market prices. If a symbol for an
                                                open position is not in this dict, its P&L
                                                may be set to None or a warning printed.
@@ -426,7 +429,7 @@ class PortfolioManager:
                 position.unrealized_pnl = 0.0
             position.last_update_timestamp = datetime.now() # Or use timestamp from data feed if available
 
-    def get_total_equity(self, current_prices: dict[str, float]) -> float:
+    def get_total_equity(self, current_prices: Dict[str, float]) -> float:
         """
         Calculates the total current equity of the portfolio.
 
@@ -435,7 +438,7 @@ class PortfolioManager:
         `update_unrealized_pnl` to ensure P&L figures are current.
 
         Args:
-            current_prices (dict[str, float]): Current market prices for all symbols
+            current_prices (Dict[str, float]): Current market prices for all symbols
                                                held in open positions, used to update P&L.
 
         Returns:
@@ -591,7 +594,7 @@ class PortfolioManager:
 #
 #     return total_pnl
 
-def run_strategy(historical_data_dict: dict[str, pd.DataFrame], initial_capital: float, config: dict) -> dict:
+def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital: float, config: Dict) -> Dict:
     """
     Simulates a trading strategy using historical price data for multiple symbols.
 

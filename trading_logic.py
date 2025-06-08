@@ -86,7 +86,8 @@ class Position:
         self.active_stop_loss_order_id: Optional[str] = None  # ID of the currently active stop-loss order linked to this position
 
 def execute_order(order: Order, current_market_price: float, slippage_pips: float,
-                  commission_per_lot: float, pip_point_value: float, lot_size: int) -> Order:
+                  commission_per_lot: float, pip_point_value: float, lot_size: int,
+                  timestamp_filled_param: datetime) -> Order:
     """
     Simulates the execution of a given financial order, updating its state.
 
@@ -158,7 +159,7 @@ def execute_order(order: Order, current_market_price: float, slippage_pips: floa
 
     # Update order status and timestamp
     order.status = "filled"
-    order.timestamp_filled = datetime.now()
+    order.timestamp_filled = timestamp_filled_param
 
     return order
 
@@ -716,7 +717,8 @@ def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital:
                 executed_order = execute_order(
                     order=stop_order, current_market_price=stop_order.order_price,
                     slippage_pips=config['slippage_pips'], commission_per_lot=config['commission_per_lot'],
-                    pip_point_value=config['pip_point_value'][symbol], lot_size=config['lot_size'][symbol]
+                    pip_point_value=config['pip_point_value'][symbol], lot_size=config['lot_size'][symbol],
+                    timestamp_filled_param=timestamp
                 )
                 if executed_order.status == "filled":
                     try:
@@ -770,7 +772,8 @@ def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital:
                 executed_exit_order = execute_order(
                     order=market_exit_order, current_market_price=current_close,
                     slippage_pips=config['slippage_pips'], commission_per_lot=config['commission_per_lot'],
-                    pip_point_value=config['pip_point_value'][symbol], lot_size=config['lot_size'][symbol]
+                    pip_point_value=config['pip_point_value'][symbol], lot_size=config['lot_size'][symbol],
+                    timestamp_filled_param=timestamp
                 )
                 if executed_exit_order.status == "filled":
                     try:
@@ -821,7 +824,7 @@ def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital:
             if current_signal == 1 or current_signal == -1: # If there's an entry signal
                 # Calculate position size based on risk parameters
                 account_equity = portfolio_manager.get_total_equity(current_prices)
-                risk_percentage_per_trade = config['risk_per_trade']
+                risk_percentage_per_trade = config['risk_per_trade'] / 100 if config['risk_per_trade'] >= 1 else config['risk_per_trade']
                 current_atr = symbol_data_df.loc[timestamp, atr_col]
                 if pd.isna(current_atr) or current_atr <= 0: continue # ATR must be valid
 
@@ -863,7 +866,8 @@ def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital:
                     executed_entry_order = execute_order(
                         order=entry_market_order, current_market_price=current_close,
                         slippage_pips=config['slippage_pips'], commission_per_lot=config['commission_per_lot'],
-                        pip_point_value=pip_val_per_unit, lot_size=lot_sz
+                        pip_point_value=pip_val_per_unit, lot_size=lot_sz,
+                        timestamp_filled_param=timestamp
                     )
                     if executed_entry_order.status == "filled":
                         try:

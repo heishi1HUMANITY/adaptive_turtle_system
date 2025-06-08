@@ -373,7 +373,7 @@ class TestTradingLogic(unittest.TestCase):
     def test_calculate_position_size_no_risk_capital_left_for_trade(self):
         # Scenario: total risk allows some, but not enough for even 1 unit if risk_per_lot is high
         size = tl.calculate_position_size(
-            account_equity=100000, risk_percentage=0.01, atr=0.01, # atr = 1 pip
+            account_equity=100000, risk_percentage=0.01, atr=1, # atr=1, # atr = 1 pip
             pip_value_per_lot=10, lot_size=100000, # risk_per_lot = 2*1*10 = 20
             max_units_per_market=1000000, current_units_for_market=0,
             total_risk_percentage_limit=0.05, current_total_open_risk_percentage=0.0499 # only 0.0001% risk capital left = $10
@@ -392,7 +392,7 @@ class TestTradingLogic(unittest.TestCase):
 
         # If max_additional_monetary_risk was even smaller, e.g., 5 (less than risk_per_lot for 1 unit)
         size_very_low_remaining_risk = tl.calculate_position_size(
-            account_equity=100000, risk_percentage=0.01, atr=0.01,
+            account_equity=100000, risk_percentage=0.01, atr=1,
             pip_value_per_lot=10, lot_size=100000,
             max_units_per_market=1000000, current_units_for_market=0,
             total_risk_percentage_limit=0.05, current_total_open_risk_percentage=0.04995 # only 0.00005% risk capital left = $5
@@ -406,7 +406,7 @@ class TestTradingLogic(unittest.TestCase):
         # e.g., risk_per_unit = risk_per_lot / lot_size = 20 / 100000 = 0.0002
         # if max_additional_monetary_risk_allowed = 0.0001, then affordable_units = 0.0001 / 0.0002 = 0.5 units. floor(0.5) = 0
         size_tiny_risk = tl.calculate_position_size(
-            account_equity=100000, risk_percentage=0.0000001, atr=0.01, # risk_per_trade is 0.01
+            account_equity=100000, risk_percentage=0.0000001, atr=1, # risk_per_trade is 0.01
             pip_value_per_lot=10, lot_size=100000,
             max_units_per_market=1000000, current_units_for_market=0,
             total_risk_percentage_limit=0.05, current_total_open_risk_percentage=0.0 # Plenty of total risk

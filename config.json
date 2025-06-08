@@ -5,5 +5,20 @@
   "take_profit_atr_multiplier": 10,
   "risk_percentage_per_trade": 1,
   "max_units_per_market": 4,
-  "max_total_risk_percentage": 5
+  "max_total_risk_percentage": 5,
+  "slippage_pips": 0.2,
+  "commission_per_lot": 500,
+  "markets": ["EUR/USD", "USD/JPY"],
+  "take_profit_long_exit_period": 10,
+  "take_profit_short_exit_period": 10,
+  "entry_donchian_period": 20,
+  "account_currency": "JPY",
+  "pip_point_value": {
+    "EUR/USD": 0.0001,
+    "USD/JPY": 0.01
+  },
+  "lot_size": {
+    "EUR/USD": 100000,
+    "USD/JPY": 100000
+  }
 }

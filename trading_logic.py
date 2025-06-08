@@ -595,7 +595,7 @@ class PortfolioManager:
 #
 #     return total_pnl
 
-def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital: float, config: Dict) -> Dict:
+def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital: float, config: Dict, emergency_stop_activated: bool = False) -> Dict:
     """
     Simulates a trading strategy using historical price data for multiple symbols.
 
@@ -620,6 +620,8 @@ def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital:
             - Strategy parameters (indicator periods for Donchian channels, ATR, etc.).
             - Execution parameters (slippage, commission rates).
             - List of markets to trade (`config['markets']`).
+        emergency_stop_activated (bool, optional): If True, new trade entries are disabled.
+                                                 Defaults to False.
 
     Returns:
         dict: A dictionary containing the results of the backtest, with keys:
@@ -881,6 +883,8 @@ def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital:
                             )
                         except ValueError as e: # Catch errors from open_position (e.g. opposing trade)
                             print(f"Error opening position for {symbol} at {timestamp}: {e}")
+        else: # emergency_stop_activated is True
+            pass # New entry signals are skipped
 
     # --- 3. Return Results of the Backtest ---
     return {

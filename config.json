@@ -20,5 +20,10 @@
   "lot_size": {
     "EUR/USD": 100000,
     "USD/JPY": 100000
-  }
+  },
+  "logging": {
+    "log_file_path": "trading_system.log",
+    "log_level": "INFO"
+  },
+  "emergency_stop": false
 }

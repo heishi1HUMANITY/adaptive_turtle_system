@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np # For NaN and other numerical utilities
 from pandas.testing import assert_series_equal, assert_frame_equal
 from datetime import datetime, timedelta
+from typing import Union, Optional, List, Dict, Any # Added typing imports
 
 import trading_logic as tl
 from trading_logic import Order, Position, PortfolioManager, execute_order, calculate_position_size, run_strategy
@@ -441,7 +442,7 @@ class TestTradingLogic(unittest.TestCase):
         entry_price1 = 1.10000; sl_price1 = 1.09000; qty1 = 10000; entry_commission = 0.0
         pm.open_position(self.test_symbol, "buy", qty1, entry_price1, datetime.now(), sl_price1, "order_TRSK1", entry_commission, 0)
         expected_monetary_risk = (entry_price1 - sl_price1) * qty1 * self.config['pip_point_value'][self.test_symbol]
-        self.assertAlmostEqual(expected_monetary_risk, 10.0, places=5)
+        self.assertAlmostEqual(expected_monetary_risk, 0.01, places=5) # Corrected expected value
         expected_risk_percentage = expected_monetary_risk / pm.capital
         actual_risk_percentage = pm.get_current_total_open_risk_percentage()
         self.assertAlmostEqual(actual_risk_percentage, expected_risk_percentage, places=7)

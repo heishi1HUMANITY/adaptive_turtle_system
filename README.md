@@ -69,3 +69,41 @@ except Exception as e:
     print(f"An error occurred: {e}")
 
 ```
+
+### Trading Logic Core
+
+The `trading_logic.py` file contains the core financial calculations and logic for the trading system. This module provides functionalities for calculating technical indicators, generating trading signals, and determining position sizes.
+
+**Key Functionalities:**
+
+*   **Technical Indicators**:
+    *   `calculate_donchian_channel(high, low, period)`: Calculates Donchian Channel upper and lower bands.
+    *   `calculate_atr(high, low, close, period)`: Calculates Average True Range.
+*   **Signal Generation**:
+    *   `generate_entry_signals(close, donchian_upper, donchian_lower, entry_period)`: Generates entry signals based on Donchian breakouts.
+    *   `generate_exit_signals(close, donchian_upper_exit, donchian_lower_exit, exit_period_long, exit_period_short, current_positions)`: Generates exit signals.
+*   **Position Sizing**:
+    *   `calculate_position_size(...)`: Calculates position size based on account equity, risk parameters, ATR, and other constraints. (See function signature for full arguments).
+
+**Example: Calculating Donchian Channels**
+
+```python
+import pandas as pd
+import trading_logic as tl # Assuming trading_logic.py is accessible
+
+# Sample data (replace with your actual data)
+data = {
+    'high': [10, 12, 11, 13, 14, 15],
+    'low':  [8,  9,  10, 10, 11, 12],
+    'close':[9,  11, 10, 12, 13, 14]
+}
+df = pd.DataFrame(data)
+
+period = 3 # Define Donchian period
+upper_band, lower_band = tl.calculate_donchian_channel(df['high'], df['low'], period)
+
+print("Donchian Upper Band:")
+print(upper_band)
+print("\\nDonchian Lower Band:")
+print(lower_band)
+```

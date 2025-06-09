@@ -1,0 +1,28 @@
+.kpi-summary-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  padding: 20px;
+}
+
+.kpi-card {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 10px;
+  min-width: 200px;
+  box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.kpi-card h4 {
+  margin-top: 0;
+  color: #333;
+}
+
+.kpi-card p {
+  font-size: 1.5em;
+  margin-bottom: 0;
+  color: #007bff;
+}

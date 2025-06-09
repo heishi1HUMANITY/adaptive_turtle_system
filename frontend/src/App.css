@@ -13,15 +13,45 @@
   }
 }
 
+.App-nav {
+  background-color: #f0f0f0;
+  padding: 10px 0;
+  margin-bottom: 20px;
+}
+
+.App-nav ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.App-nav li {
+  margin: 0 15px;
+}
+
+.App-nav a {
+  text-decoration: none;
+  color: #007bff;
+  font-weight: bold;
+}
+
+.App-nav a:hover {
+  text-decoration: underline;
+}
+
 .App-header {
   background-color: #282c34;
-  min-height: 100vh;
+  /* min-height: 100vh; */ /* Removed this to make it a normal header */
+  padding: 20px; /* Added padding */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: calc(10px + 2vmin);
+  font-size: calc(10px + 2vmin); /* Kept font size for potential logo/title */
   color: white;
+  margin-bottom: 20px; /* Added margin to separate from main content */
 }
 
 .App-link {

@@ -13,13 +13,13 @@ const NumericInput = ({ label, value, onChange, tooltip, disabled, error, onVali
 
   return (
     <div>
-      <label htmlFor={id}> {/* Use htmlFor */}
+      <label htmlFor={id}>
         {label}
         {tooltip && <span title={tooltip}> (?)</span>}
       </label>
       <input
         type="number"
-        id={id} {/* Set id on input */}
+        id={id} // Corrected line: comment removed
         value={value}
         onChange={handleChange}
         disabled={disabled}

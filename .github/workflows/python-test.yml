@@ -1,8 +1,9 @@
 name: Python Tests
 
 on:
-  pull_request:
+  push:
     branches: [ main ]
+  pull_request: {} # Trigger on all pull requests
 
 jobs:
   test:

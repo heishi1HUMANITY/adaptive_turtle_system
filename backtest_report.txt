@@ -1,0 +1,47 @@
+==================================================
+BACKTEST PERFORMANCE REPORT
+==================================================
+
+----------------------------------------
+BACKTEST PARAMETERS
+----------------------------------------
+Initial Capital: 1,000,000.00
+Markets Traded: EUR/USD
+Data Period: 2023-01-01 00:00:00+00:00 to 2023-01-01 02:00:00+00:00
+
+Strategy Parameters:
+  Entry Donchian Period: 20
+  Long Exit Donchian Period: 10
+  Short Exit Donchian Period: 10
+  ATR Period for Stop-Loss: 20
+  Stop-Loss ATR Multiplier: 2
+  Risk Per Trade: 100.00%
+  Total Portfolio Risk Limit: 5.00%
+
+Execution Parameters:
+  Slippage (pips): 0.2
+  Commission (per lot): 500
+
+----------------------------------------
+PERFORMANCE SUMMARY
+----------------------------------------
+Initial Capital: 1,000,000.00
+Final Equity: 1,000,000.00
+Total Net Profit: 0.00
+Gross Profit: 0.00
+Gross Loss: 0.00
+Profit Factor: 0.00
+Max Drawdown (%): 0.00%
+Max Drawdown (Absolute): 0.00
+Sharpe Ratio: 0.0000
+Total Trades: 0
+Winning Trades: 0
+Losing Trades: 0
+Breakeven Trades: 0
+Win Rate (%): 0.00%
+Average Win Amount: 0.00
+Average Loss Amount: 0.00
+
+==================================================
+End of Report
+==================================================

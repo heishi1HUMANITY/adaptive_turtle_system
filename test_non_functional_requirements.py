@@ -4,6 +4,7 @@ import shutil
 import os
 import json
 import sys
+import copy # Added for deepcopy
 from io import StringIO
 import pandas as pd
 from unittest.mock import patch, mock_open
@@ -79,13 +80,83 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         start_date = pd.to_datetime('2023-01-01 00:00:00')
         timestamps = pd.date_range(start=start_date, periods=rows, freq='D')
 
+        base_price = 1.1000
+        opens = []
+        highs = []
+        lows = []
+        closes = []
+        volumes = []
+
+        entry_donchian_period = 20 # From default config, relevant for signal generation
+
+        # entry_donchian_period = self.default_config_data.get("entry_donchian_period", 20)
+        # Hardcode for clarity, as it's crucial for test data design
+        entry_donchian_period = 20
+
+        entry_donchian_period = 20
+
+        for i in range(rows):
+            open_val = base_price + (i * 0.00001) # Minimal trend
+            high_val = open_val + 0.0001
+            low_val = open_val - 0.0001
+            close_val = open_val
+            volume = 1000 + i * 10
+
+            if rows >= entry_donchian_period + 2: # Need P+1 for signal, P+2 for it to be processed by main loop
+                # Phase 1: Initial period (0 to P-1), e.g. 0-19
+                if i < entry_donchian_period:
+                    high_val = base_price + 0.0010 # Max high during these P periods
+                    low_val = base_price - 0.0010
+                    open_val = base_price
+                    close_val = base_price
+
+                # Phase 2: Breakout bar at index P (e.g., 20)
+                # Signal at loop index P+1 (data index P+1) uses Close[P] and Donchian_Upper[P+1].
+                # Donchian_Upper[P+1] is max(High[1...P]).
+                # We need Close[P] > max(High[1...P]).
+                elif i == entry_donchian_period: # This is index P (e.g., 20)
+                    # Highs for indices 1 to P-1 were base_price + 0.0010.
+                    # Make High[P] also low, so max(High[1...P]) remains base_price + 0.0010.
+                    high_val = base_price + 0.0010
+                    open_val = base_price # Keep open simple
+                    low_val = base_price - 0.0005
+                    # This Close[P] must be > max(High[1...P]), which is now base_price + 0.0010.
+                    close_val = base_price + 0.0020
+
+                # Phase 3: Subsequent bars to keep trade open or allow exit logic testing
+                elif i > entry_donchian_period and i < entry_donchian_period + 5: # e.g. indices 21-24
+                    # Let price stay high for a few bars
+                    open_val = close_val # open at previous close
+                    close_val = open_val + (0.0001 if i%2==0 else -0.0001) # slight move
+                    high_val = open_val + 0.0005
+                    low_val = open_val - 0.0005
+
+            # Ensure OHLC consistency
+            current_prices = [open_val, high_val, low_val, close_val]
+            final_high = max(current_prices)
+            final_low = min(current_prices)
+            final_close = min(max(close_val, final_low), final_high)
+            final_open = min(max(open_val, final_low), final_high)
+            volume = 1000 + i * 10 # Define volume for each iteration
+
+            if final_high == final_low:
+                final_high += 0.0001
+            if final_close < final_low : final_close = final_low # Should not happen with logic above
+            if final_close > final_high : final_close = final_high # Should not happen
+
+            opens.append(final_open)
+            highs.append(final_high)
+            lows.append(final_low) # Corrected from low_price to final_low
+            closes.append(final_close) # Corrected from close_price to final_close
+            volumes.append(volume)
+
         data = {
             'Timestamp': timestamps,
-            'Open': [1.1000 + i*0.001 for i in range(rows)],
-            'High': [1.1050 + i*0.001 for i in range(rows)],
-            'Low': [1.0950 + i*0.001 for i in range(rows)],
-            'Close': [1.1020 + i*0.001 for i in range(rows)],
-            'Volume': [1000 + i*10 for i in range(rows)]
+            'Open': opens,
+            'High': highs,
+            'Low': lows,
+            'Close': closes,
+            'Volume': volumes
         }
         df = pd.DataFrame(data)
         df.to_csv(filepath, index=False)
@@ -111,7 +182,8 @@ class TestNonFunctionalRequirements(unittest.TestCase):
             'Timestamp': pd.to_datetime(['2023-01-01']),
             'Open': [1.0], 'High': [1.1], 'Low': [0.9], 'Close': [1.05], 'Volume': [100]
         })
-        mock_load_data.return_value = dummy_df
+        # Ensure a fresh copy of dummy_df is returned each time load_csv_data is called
+        mock_load_data.side_effect = lambda *args, **kwargs: dummy_df.copy()
         mock_run_strategy.return_value = {
             "equity_curve": [(pd.Timestamp('2023-01-01'), 1000000)], "trade_log": [], "final_capital": 1000000,
             "portfolio_summary": {"initial_capital": 1000000, "final_equity": 1000000, "total_trades": 0}
@@ -151,7 +223,9 @@ class TestNonFunctionalRequirements(unittest.TestCase):
             'Timestamp': pd.to_datetime(['2023-01-01']),
             'Open': [1.0], 'High': [1.1], 'Low': [0.9], 'Close': [1.05], 'Volume': [100]
         })
-        mock_load_data.return_value = dummy_df
+        # Ensure a fresh copy of dummy_df is returned each time load_csv_data is called
+        # to prevent inplace modifications in main_backtest.main() from affecting subsequent calls.
+        mock_load_data.side_effect = lambda *args, **kwargs: dummy_df.copy()
         mock_run_strategy.return_value = {
             "equity_curve": [(pd.Timestamp('2023-01-01'), 1000000)], "trade_log": [], "final_capital": 1000000,
             "portfolio_summary": {"initial_capital": 1000000, "final_equity": 1000000, "total_trades": 0}
@@ -161,7 +235,8 @@ class TestNonFunctionalRequirements(unittest.TestCase):
 
         # --- Test DEBUG level ---
         debug_log_file_path = os.path.join(self.test_dir, "debug_test.log")
-        debug_config = self.default_config_data.copy()
+        # Use deepcopy to prevent modification of self.default_config_data's nested dicts
+        debug_config = copy.deepcopy(self.default_config_data)
         debug_config["logging"]["log_level"] = "DEBUG"
         debug_config["logging"]["log_file_path"] = debug_log_file_path
         self._write_config(debug_config)
@@ -180,7 +255,8 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         # Clear log file for the next run or use a different log file
         if os.path.exists(debug_log_file_path): os.remove(debug_log_file_path) # clean up previous log
 
-        warning_config = self.default_config_data.copy()
+        # Use deepcopy here as well
+        warning_config = copy.deepcopy(self.default_config_data)
         warning_config["logging"]["log_level"] = "WARNING"
         # Make logging config incomplete to trigger the warning in main_backtest.py
         del warning_config["logging"]["log_file_path"]
@@ -232,8 +308,14 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         warning_config["logging"]["log_file_path"] = os.path.join(self.test_dir, "warning_test.log")
         warning_config["emergency_stop"] = True # To ensure a WARNING message is logged
         self._write_config(warning_config)
+
+        # Ensure the global mock_load_config_main is set for this call
         mock_load_config_main.return_value = warning_config
 
+        # Specific context for this main() call to ensure mocks are correctly applied
+        # The dummy_df for mock_load_data is defined at the start of the test method.
+        # We re-assert its behavior here if needed, or rely on the side_effect already set.
+        # mock_load_data.side_effect should still be active from the beginning of the test method.
         main_backtest.main()
 
         warning_log_file_path = warning_config["logging"]["log_file_path"]
@@ -248,7 +330,8 @@ class TestNonFunctionalRequirements(unittest.TestCase):
 
     def test_console_warning_for_default_logging_config(self):
         # Test the print warning if logging config is incomplete
-        config_missing_logging_keys = self.default_config_data.copy()
+        # Use deepcopy here as well
+        config_missing_logging_keys = copy.deepcopy(self.default_config_data)
         # Example: remove log_level, keeping log_file_path to make the file predictable for cleanup
         # but still triggering the "incomplete" warning.
         del config_missing_logging_keys["logging"]["log_level"]
@@ -419,9 +502,14 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         with open(log_file_path, 'r') as f:
             log_content = f.read()
 
-        # main_backtest.py's general "except Exception as e:" block should catch this.
-        # It logs: main_logger.exception(f"An unexpected error occurred during the backtest process: {e}")
-        self.assertIn("main_backtest - An unexpected error occurred during the backtest process", log_content)
+        # main_backtest.py's `except ValueError as e:` block should catch this.
+        # It logs: main_logger.error(f"Error: Value error encountered: {e}.")
+        # The general "except Exception as e" block logs:
+        # main_logger.exception(f"An unexpected error occurred during the backtest process: {e}")
+        # We expect the more specific ValueError to be caught and logged.
+        expected_log_message = "main_backtest - Error: Value error encountered: Simulated ValueError from calculate_position_size"
+        self.assertIn(expected_log_message, log_content)
+        # Ensure the specific error text is also present, which is part of the expected_log_message
         self.assertIn("Simulated ValueError from calculate_position_size", log_content)
 
     # --- Emergency Stop Tests ---
@@ -450,7 +538,7 @@ class TestNonFunctionalRequirements(unittest.TestCase):
             # Data needs to be long enough for Donchian channels to form (e.g. > 20 periods for entry)
             self._create_dummy_historical_data(self.historical_data_file_path, rows=50)
             dummy_df = pd.read_csv(self.historical_data_file_path, parse_dates=['Timestamp'])
-            dummy_df.set_index('Timestamp', inplace=True)
+            # Do NOT set index here; main_backtest.py will handle it after receiving the df.
             mock_data_load.return_value = dummy_df
 
             # Let run_strategy execute, but mock KPI/report

@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { act } from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react'; // Import within
 import '@testing-library/jest-dom';
 import TradeHistoryTable from './TradeHistoryTable';
 
-import { act } from '@testing-library/react'; // Using act from RTL
+// Using act from React
 
 // It's generally better to set up and tear down mocks for each test or context (describe block)
 // to avoid interference between tests.
@@ -136,12 +136,38 @@ describe('TradeHistoryTable', () => {
         setAttribute: jest.fn(),
         click: jest.fn(), // Mock the click function on the link
         style: { visibility: '' },
+        download: '', // Ensure the download attribute exists for the condition in the component
       };
-      createElementSpy = jest.spyOn(document, 'createElement').mockReturnValue(mockLink);
+      // Spy on document.createElement but preserve original behavior unless it's 'a'
+      const originalCreateElement = document.createElement;
+      createElementSpy = jest.spyOn(document, 'createElement').mockImplementation((tagName, options) => {
+        if (tagName.toLowerCase() === 'a') {
+          return mockLink;
+        }
+        return originalCreateElement.call(document, tagName, options);
+      });
       clickSpy = jest.spyOn(mockLink, 'click'); // Specifically spy on the mockLink's click method
 
-      appendChildSpy = jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
-      removeChildSpy = jest.spyOn(document.body, 'removeChild').mockImplementation(() => {});
+      // Let's not mock appendChild/removeChild on document.body directly,
+      // as it might interfere with testing-library's render.
+      // We can still check if they were called on document.body if necessary,
+      // but for now, the primary check is if the link was created and clicked.
+      // Refined mocking for appendChild/removeChild
+      const originalAppendChild = document.body.appendChild;
+      appendChildSpy = jest.spyOn(document.body, 'appendChild').mockImplementation(node => {
+        if (node === mockLink) {
+          return mockLink; // For our mockLink, don't do the real append, just return the node.
+        }
+        return originalAppendChild.call(document.body, node); // For others, use original.
+      });
+
+      const originalRemoveChild = document.body.removeChild;
+      removeChildSpy = jest.spyOn(document.body, 'removeChild').mockImplementation(node => {
+        if (node === mockLink) {
+          return mockLink; // For our mockLink, don't do the real remove.
+        }
+        return originalRemoveChild.call(document.body, node); // For others, use original.
+      });
 
       // Ensure global.URL and global.URL.createObjectURL are defined before spying
       if (typeof global.URL === 'undefined') {
@@ -182,12 +208,12 @@ describe('TradeHistoryTable', () => {
 
     it('handles empty data for CSV export gracefully (no Blob creation or download)', () => {
       render(<TradeHistoryTable tradeHistoryData={[]} />); // Empty data
-      const exportButton = screen.getByText('Export to CSV');
 
-      act(() => {
-        fireEvent.click(exportButton);
-      });
+      // Verify loading message is shown and button is not
+      expect(screen.getByText(/Loading trade history or no data to display.../i)).toBeInTheDocument();
+      expect(screen.queryByText('Export to CSV')).not.toBeInTheDocument();
 
+      // Consequently, CSV generation functions should not have been called
       expect(blobSpy).not.toHaveBeenCalled();
       expect(createObjectURLSpy).not.toHaveBeenCalled();
       expect(mockLink.click).not.toHaveBeenCalled();

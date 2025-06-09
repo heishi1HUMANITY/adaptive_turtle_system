@@ -1,34 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import logo from './logo.svg';
+import React from 'react';
 import './App.css';
+import BacktestSettingsForm from './components/BacktestSettingsForm'; // Import the form
 
 function App() {
-  const [apiStatus, setApiStatus] = useState('');
-
-  useEffect(() => {
-    fetch('http://localhost:8000/api/health')
-      .then(response => response.json())
-      .then(data => setApiStatus(data.status))
-      .catch(error => console.error('Error fetching API status:', error));
-  }, []);
-
   return (
     <div className="App">
       <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-        <p>API Status: {apiStatus}</p>
+        {/* You can keep or remove the header as per overall app design */}
+        {/* For now, let's just render the form */}
       </header>
+      <main>
+        <BacktestSettingsForm />
+      </main>
     </div>
   );
 }

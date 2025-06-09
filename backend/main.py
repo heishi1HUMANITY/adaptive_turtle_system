@@ -1,6 +1,7 @@
 import sys
 import os
 import uuid
+import pandas as pd # Added import
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
@@ -87,10 +88,14 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
 
         if raw_data_df.empty:
             raise ValueError("Loaded data is empty.")
-        if 'Timestamp' not in raw_data_df.columns:
-            # Assuming data_loader standardizes this, but good to check or ensure
-            # Or if data_loader is expected to return a dict of DFs, adapt this
-            raise ValueError("Timestamp column missing in loaded data.")
+
+        if not isinstance(raw_data_df.index, pd.DatetimeIndex):
+            raise ValueError("Data does not have a DatetimeIndex. 'Timestamp' column might be missing or not set as index.")
+
+        required_columns = ['Open', 'High', 'Low', 'Close'] # Define essential columns
+        missing_columns = [col for col in required_columns if col not in raw_data_df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing essential data columns: {', '.join(missing_columns)}")
 
         # Prepare historical_data_dict as expected by run_strategy
         # Assigning the loaded DataFrame to the first market specified.

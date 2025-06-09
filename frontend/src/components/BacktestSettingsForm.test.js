@@ -1,7 +1,15 @@
 import React, { act } from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'; // Import act
-import '@testing-library/jest-dom'; // For extended matchers like .toBeDisabled()
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router-dom'; // Import MemoryRouter
 import BacktestSettingsForm from './BacktestSettingsForm';
+
+// Mock useNavigate
+const mockNavigate = jest.fn();
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'), // use actual for all non-hook parts
+  useNavigate: () => mockNavigate,
+}));
 
 // Mock child components to simplify testing, focus on BacktestSettingsForm logic
 jest.mock('./FileUpload', () => ({ disabled, onFileSelect }) => <input type="file" data-testid="file-upload" disabled={disabled} onChange={onFileSelect} />);
@@ -17,17 +25,29 @@ jest.mock('./DateRangePicker', () => ({ startDate, endDate, onStartDateChange, o
 // For now, we'll test with the actual NumericInput to see validation integration.
 
 describe('BacktestSettingsForm', () => {
+  let originalFetch;
+
   beforeEach(() => {
     // Clear console.log mocks if any were set up for API calls
     jest.spyOn(console, 'log').mockImplementation(() => {});
+    // Mock global.fetch and save the original
+    originalFetch = global.fetch;
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ job_id: 'default-job-id' }),
+      })
+    );
+    mockNavigate.mockClear(); // Clear mockNavigate calls before each test
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    jest.restoreAllMocks(); // This will restore console.log
+    global.fetch = originalFetch; // Restore original fetch
   });
 
   test('renders all form sections and initial values', () => {
-    render(<BacktestSettingsForm />);
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     expect(screen.getByText('自動売買システム バックテスト')).toBeInTheDocument();
     expect(screen.getByText('1. データと期間設定')).toBeInTheDocument();
     expect(screen.getByText('2. シミュレーション条件')).toBeInTheDocument();
@@ -40,7 +60,7 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('updates state on input change (e.g., initial capital)', () => {
-    render(<BacktestSettingsForm />);
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     const initialCapitalInput = screen.getByLabelText(/初期口座資金/i);
     act(() => {
       fireEvent.change(initialCapitalInput, { target: { value: '2000000' } });
@@ -49,7 +69,7 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('displays validation error for invalid numeric input', () => {
-    render(<BacktestSettingsForm />);
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     const spreadInput = screen.getByLabelText(/スプレッド/i);
     act(() => {
       fireEvent.change(spreadInput, { target: { value: 'abc' } });
@@ -58,7 +78,7 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('clears validation error when input becomes valid', () => {
-    render(<BacktestSettingsForm />);
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     const spreadInput = screen.getByLabelText(/スプレッド/i);
     act(() => {
       fireEvent.change(spreadInput, { target: { value: 'abc' } }); // Invalid
@@ -71,7 +91,7 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('reset button clears inputs and errors', () => {
-    render(<BacktestSettingsForm />);
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     const initialCapitalInput = screen.getByLabelText(/初期口座資金/i);
     act(() => {
       fireEvent.change(initialCapitalInput, { target: { value: 'abc' } }); // Cause an error
@@ -92,8 +112,8 @@ describe('BacktestSettingsForm', () => {
     expect(screen.queryByText('初期口座資金 must be a valid number.')).not.toBeInTheDocument(); // Error cleared
   });
 
-  test('"Run Backtest" button performs validation and shows executing state', async () => {
-    render(<BacktestSettingsForm />);
+  test('"Run Backtest" button performs validation, calls fetch, and navigates on success', async () => {
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
 
     // Test case 1: Validation fails
@@ -106,46 +126,104 @@ describe('BacktestSettingsForm', () => {
     });
     expect(screen.getByText('スプレッド must be a valid number.')).toBeInTheDocument();
     expect(executeButton).not.toBeDisabled();
-    expect(executeButton).toHaveTextContent('バックテストを実行する');
+    expect(global.fetch).not.toHaveBeenCalled(); // Fetch should not be called
+    expect(mockNavigate).not.toHaveBeenCalled();
 
-    // Test case 2: Validation passes
+
+    // Test case 2: Validation passes, API call succeeds
     act(() => {
       fireEvent.change(spreadInput, { target: { value: '1.5' } }); // Valid
     });
     expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument();
 
-    act(() => {
+    // Set up successful fetch mock for this specific call if different from default
+    global.fetch.mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ job_id: 'test-job-id-success' }),
+      })
+    );
+
+    await act(async () => {
       fireEvent.click(executeButton);
     });
 
-    // Check for executing state
-    expect(executeButton).toBeDisabled();
-    expect(executeButton).toHaveTextContent('実行中...');
-    expect(screen.getByLabelText(/初期口座資金/i)).toBeDisabled(); // Example input
+    expect(global.fetch).toHaveBeenCalledTimes(1); // Or more, if there were previous valid calls in other tests not cleared. Best to check specific call.
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/api/backtest/run',
+      expect.objectContaining({ method: 'POST' })
+    );
 
-    // Wait for the mock API call (setTimeout) to finish
+    // Check for executing state (momentarily)
+    // This is hard to test precisely without more complex state inspection or visual regression.
+    // We know it sets isExecuting to true, then false.
+
+    // Check navigation
     await waitFor(() => {
-      expect(executeButton).not.toBeDisabled();
-      expect(executeButton).toHaveTextContent('バックテストを実行する');
-      expect(screen.getByLabelText(/初期口座資金/i)).not.toBeDisabled();
-    }, { timeout: 2500 }); // Timeout should be longer than the setTimeout in the component
+      expect(mockNavigate).toHaveBeenCalledWith('/loading/test-job-id-success', {
+        state: { jobId: 'test-job-id-success' },
+      });
+    });
+
+    // Button should be re-enabled after API call
+    expect(executeButton).not.toBeDisabled();
+    expect(executeButton).toHaveTextContent('バックテストを実行する');
   });
-   test('all inputs are disabled during execution', async () => {
-    render(<BacktestSettingsForm />);
+
+  test('"Run Backtest" button shows error message on API failure', async () => {
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
 
-    // Ensure form is valid before clicking execute
-    // (Assuming default values are valid, or set them to valid ones if not)
-    // For example, if date pickers need values:
-    // fireEvent.change(screen.getByTestId('start-date'), { target: { value: '2023-01-01' } });
-    // fireEvent.change(screen.getByTestId('end-date'), { target: { value: '2023-12-31' } });
-
+    // Ensure form is valid
+    const spreadInput = screen.getByLabelText(/スプレッド/i);
     act(() => {
+      fireEvent.change(spreadInput, { target: { value: '1.5' } });
+    });
+
+    // Set up failed fetch mock
+    global.fetch.mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve('Internal Server Error'),
+      })
+    );
+
+    await act(async () => {
       fireEvent.click(executeButton);
     });
 
-    expect(executeButton).toBeDisabled();
-    // Check a few inputs
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByText(/バックテストの開始に失敗しました。サーバーエラー: 500 - Internal Server Error/i)).toBeInTheDocument();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(executeButton).not.toBeDisabled();
+  });
+
+
+   test('all inputs are disabled during execution', async () => {
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
+    const initialExecuteButton = screen.getByRole('button', { name: /バックテストを実行する/i });
+
+    // Ensure form is valid before clicking execute
+    // (Assuming default values are valid)
+    global.fetch.mockImplementationOnce(() => // Ensure fetch is mocked to resolve slowly or hang to check disabled state
+      new Promise(resolve => setTimeout(() => resolve({
+        ok: true,
+        json: () => Promise.resolve({ job_id: 'test-job-id-disabled' })
+      }), 100)) // Short delay to allow checking disabled state
+    );
+
+    // fireEvent.click is already wrapped in act by RTL for synchronous updates
+    fireEvent.click(initialExecuteButton);
+
+    // After the click, isExecuting should be true.
+    // Wait for the button text to change and for it to be disabled.
+    const executingButton = await screen.findByRole('button', { name: /実行中.../i });
+    expect(executingButton).toBeDisabled();
+
+    // Assert that other inputs are also disabled
     expect(screen.getByLabelText(/初期口座資金/i)).toBeDisabled();
     expect(screen.getByLabelText(/スプレッド/i)).toBeDisabled();
     expect(screen.getByRole('button', { name: /パラメータをデフォルト値に戻す/i })).toBeDisabled();
@@ -153,9 +231,14 @@ describe('BacktestSettingsForm', () => {
     expect(screen.getByTestId('start-date')).toBeDisabled();
     expect(screen.getByTestId('end-date')).toBeDisabled();
 
-
+    // After fetch completes and component processes this (setIsExecuting(false) in finally).
     await waitFor(() => {
-      expect(executeButton).not.toBeDisabled();
-    }, { timeout: 2500 });
+      // Button text should revert and it should be enabled
+      const finalExecuteButton = screen.getByRole('button', { name: /バックテストを実行する/i });
+      expect(finalExecuteButton).not.toBeDisabled();
+      expect(mockNavigate).toHaveBeenCalledWith('/loading/test-job-id-disabled', {
+        state: { jobId: 'test-job-id-disabled' },
+      });
+    });
   });
 });

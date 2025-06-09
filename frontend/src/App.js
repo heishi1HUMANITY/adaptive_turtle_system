@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 import BacktestSettingsForm from './components/BacktestSettingsForm';
 import BacktestResultPage from './components/BacktestResultPage'; // Import the new results page
+import LoadingScreen from './components/LoadingScreen'; // Import the LoadingScreen component
 
 function App() {
   return (
@@ -24,7 +25,8 @@ function App() {
         <main>
           <Routes>
             <Route path="/" element={<BacktestSettingsForm />} />
-            <Route path="/results" element={<BacktestResultPage />} /> {/* <-- Updated line */}
+            <Route path="/results" element={<BacktestResultPage />} />
+            <Route path="/loading/:jobId" element={<LoadingScreen />} /> {/* Added route for LoadingScreen */}
           </Routes>
         </main>
       </div>

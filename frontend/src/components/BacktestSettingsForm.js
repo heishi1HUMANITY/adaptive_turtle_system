@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import FileUpload from './FileUpload';
 import DateRangePicker from './DateRangePicker';
 import NumericInput from './NumericInput';
@@ -6,6 +7,7 @@ import ExecutionButton from './ExecutionButton';
 import ResetButton from './ResetButton';
 
 const BacktestSettingsForm = () => {
+  const navigate = useNavigate();
   const [dataFile, setDataFile] = useState(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -25,6 +27,7 @@ const BacktestSettingsForm = () => {
   const [exitPeriodError, setExitPeriodError] = useState('');
   const [atrPeriodError, setAtrPeriodError] = useState('');
   const [riskPercentageError, setRiskPercentageError] = useState('');
+  const [submitError, setSubmitError] = useState(null);
 
   const validateNumericInput = (value, errorSetter, fieldName) => {
     if (value === '' || isNaN(Number(value))) {
@@ -42,17 +45,21 @@ const BacktestSettingsForm = () => {
 
   const handleFileChange = (file) => {
     setDataFile(file);
+    setSubmitError(null);
   };
 
   const handleStartDateChange = (date) => {
     setStartDate(date);
+    setSubmitError(null);
   };
 
   const handleEndDateChange = (date) => {
     setEndDate(date);
+    setSubmitError(null);
   };
 
   const handleExecuteBacktest = () => {
+    setSubmitError(null); // Clear previous submission errors
     // Perform validation for all fields first
     const isInitialCapitalValid = validateNumericInput(initialCapital, setInitialCapitalError, '初期口座資金');
     const isSpreadValid = validateNumericInput(spread, setSpreadError, 'スプレッド');
@@ -67,28 +74,75 @@ const BacktestSettingsForm = () => {
       return; // Stop execution if any validation fails
     }
 
-    setIsExecuting(true); // Set executing state only if all validations pass
+    setIsExecuting(true);
 
-    const params = {
-      dataFile,
-      startDate,
-      endDate,
-      initialCapital,
-      spread,
-      commission,
-      entryPeriod,
-      exitPeriod,
-      atrPeriod,
-      riskPercentage,
+    const payload = {
+      markets: ["default_market"], // Hardcoded as per instructions
+      start_date: startDate,
+      end_date: endDate,
+      initial_capital: Number(initialCapital),
+      spread: Number(spread),
+      entry_donchian_period: Number(entryPeriod),
+      take_profit_long_exit_period: Number(exitPeriod), // Mapped from exitPeriod
+      take_profit_short_exit_period: Number(exitPeriod), // Mapped from exitPeriod
+      atr_period: Number(atrPeriod),
+      stop_loss_atr_multiplier: 3.0, // Sensible default
+      risk_per_trade: Number(riskPercentage) / 100, // Convert percentage to fraction
+      total_portfolio_risk_limit: 0.1, // Sensible default
+      slippage_pips: 0.5, // Sensible default
+      commission_per_lot: Number(commission),
+      pip_point_value: {"default_market": 0.01}, // Sensible default
+      lot_size: {"default_market": 100000}, // Sensible default
+      max_units_per_market: {"default_market": 10} // Sensible default
+      // dataFile is intentionally omitted as the backend uses a fixed file for now.
     };
-    console.log("Backtest Parameters:", params);
 
-    // Simulate API call
-    setTimeout(() => {
-      console.log("API call finished (mock)");
+    console.log("Executing backtest with parameters:", payload);
+
+    fetch('http://localhost:8000/api/backtest/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    .then(async response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        // Attempt to get more detailed error from backend
+        const errorData = await response.text();
+        console.error('Error starting backtest job:', response.status, errorData);
+        setSubmitError(`バックテストの開始に失敗しました。サーバーエラー: ${response.status} - ${errorData || '詳細不明'}`);
+        // Removed alert(`Error starting backtest: ${response.status} - ${errorData || 'Unknown error'}`);
+        throw new Error(`Backend error: ${response.status}`);
+      }
+    })
+    .then(data => {
+      if (data.job_id) {
+        console.log('Backtest job started successfully. Job ID:', data.job_id);
+        navigate(`/loading/${data.job_id}`, { state: { jobId: data.job_id } });
+      } else {
+        // This case should ideally be caught by !response.ok, but as a fallback
+        console.error('Failed to start backtest job: No job_id received', data);
+        setSubmitError('バックテストの開始に失敗しました。サーバーから有効なJob IDが返されませんでした。');
+        // Removed alert('Failed to start backtest: No job ID received.');
+      }
+    })
+    .catch(error => {
+      // Handles network errors or errors thrown from the .then() blocks
+      console.error('Fetch error:', error);
+      if (error.message.startsWith('Backend error:')) {
+        // Error already set by the .then block for !response.ok
+        // No need to call setSubmitError here again if it's a re-thrown backend error
+      } else {
+         setSubmitError('バックテストの開始に失敗しました。ネットワーク接続を確認するか、サーバーが起動しているか確認してください。');
+        // Removed alert for generic fetch error, now handled by submitError state
+      }
+    })
+    .finally(() => {
       setIsExecuting(false);
-      // Here you would typically handle the response from the backend
-    }, 2000); // Mock 2-second delay
+    });
   };
 
   const handleReset = () => {
@@ -110,7 +164,13 @@ const BacktestSettingsForm = () => {
     setExitPeriodError('');
     setAtrPeriodError('');
     setRiskPercentageError('');
+    setSubmitError(null); // Clear submit error on reset as well
     setIsExecuting(false); // Ensure isExecuting is reset
+  };
+
+  const createChangeHandler = (setter) => (e) => {
+    setter(e.target.value);
+    setSubmitError(null);
   };
 
   return (
@@ -135,7 +195,7 @@ const BacktestSettingsForm = () => {
           id="initialCapital"
           label="初期口座資金 (JPY)"
           value={initialCapital}
-          onChange={(e) => setInitialCapital(e.target.value)}
+          onChange={createChangeHandler(setInitialCapital)}
           onValidate={(value) => validateNumericInput(value, setInitialCapitalError, '初期口座資金')}
           error={initialCapitalError}
           tooltip="Initial account balance in JPY"
@@ -145,7 +205,7 @@ const BacktestSettingsForm = () => {
           id="spread"
           label="スプレッド (pips)"
           value={spread}
-          onChange={(e) => setSpread(e.target.value)}
+          onChange={createChangeHandler(setSpread)}
           onValidate={(value) => validateNumericInput(value, setSpreadError, 'スプレッド')}
           error={spreadError}
           tooltip="Spread in pips"
@@ -155,7 +215,7 @@ const BacktestSettingsForm = () => {
           id="commission"
           label="手数料 (円/ロット)"
           value={commission}
-          onChange={(e) => setCommission(e.target.value)}
+          onChange={createChangeHandler(setCommission)}
           onValidate={(value) => validateNumericInput(value, setCommissionError, '手数料')}
           error={commissionError}
           tooltip="Commission in JPY per lot"
@@ -169,7 +229,7 @@ const BacktestSettingsForm = () => {
           id="entryPeriod"
           label="エントリー期間 (ドンチャン)"
           value={entryPeriod}
-          onChange={(e) => setEntryPeriod(e.target.value)}
+          onChange={createChangeHandler(setEntryPeriod)}
           onValidate={(value) => validateNumericInput(value, setEntryPeriodError, 'エントリー期間')}
           error={entryPeriodError}
           tooltip="Donchian channel entry period"
@@ -179,7 +239,7 @@ const BacktestSettingsForm = () => {
           id="exitPeriod"
           label="エグジット期間 (ドンチャン)"
           value={exitPeriod}
-          onChange={(e) => setExitPeriod(e.target.value)}
+          onChange={createChangeHandler(setExitPeriod)}
           onValidate={(value) => validateNumericInput(value, setExitPeriodError, 'エグジット期間')}
           error={exitPeriodError}
           tooltip="Donchian channel exit period"
@@ -189,7 +249,7 @@ const BacktestSettingsForm = () => {
           id="atrPeriod"
           label="ATR期間"
           value={atrPeriod}
-          onChange={(e) => setAtrPeriod(e.target.value)}
+          onChange={createChangeHandler(setAtrPeriod)}
           onValidate={(value) => validateNumericInput(value, setAtrPeriodError, 'ATR期間')}
           error={atrPeriodError}
           tooltip="Average True Range period"
@@ -199,7 +259,7 @@ const BacktestSettingsForm = () => {
           id="riskPercentage"
           label="リスク割合 (%)"
           value={riskPercentage}
-          onChange={(e) => setRiskPercentage(e.target.value)}
+          onChange={createChangeHandler(setRiskPercentage)}
           onValidate={(value) => validateNumericInput(value, setRiskPercentageError, 'リスク割合')}
           error={riskPercentageError}
           tooltip="Risk percentage per trade"
@@ -208,6 +268,11 @@ const BacktestSettingsForm = () => {
         <ResetButton onClick={handleReset} disabled={isExecuting} />
       </div>
 
+      {submitError && (
+        <div style={{ color: 'red', marginTop: '10px', marginBottom: '10px', padding: '10px', border: '1px solid red', borderRadius: '4px' }}>
+          {submitError}
+        </div>
+      )}
       <ExecutionButton onClick={handleExecuteBacktest} isExecuting={isExecuting} />
     </div>
   );

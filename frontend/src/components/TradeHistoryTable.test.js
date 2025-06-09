@@ -1,9 +1,7 @@
-import React, { act } from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react'; // Import within
+import React from 'react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import TradeHistoryTable from './TradeHistoryTable';
-
-// Using act from React
 
 // It's generally better to set up and tear down mocks for each test or context (describe block)
 // to avoid interference between tests.
@@ -64,9 +62,7 @@ describe('TradeHistoryTable', () => {
 
 
     const nextPageButton = screen.getByRole('button', { name: /next/i });
-    act(() => {
-      fireEvent.click(nextPageButton);
-    });
+    fireEvent.click(nextPageButton);
 
     // Check page 2
     expect(screen.getByText('ONLY_ON_PAGE_TWO')).toBeInTheDocument();
@@ -76,9 +72,7 @@ describe('TradeHistoryTable', () => {
     expect(screen.getByText(/Page 2 of 2/i)).toBeInTheDocument();
 
     const prevPageButton = screen.getByRole('button', { name: /previous/i });
-    act(() => {
-      fireEvent.click(prevPageButton);
-    });
+    fireEvent.click(prevPageButton);
 
     // Back on page 1
     expect(screen.getByText('SYM1')).toBeInTheDocument();
@@ -100,9 +94,7 @@ describe('TradeHistoryTable', () => {
     const symbolHeader = screen.getByText('Symbol'); // Get the 'Symbol' header cell
 
     // Click to sort by Symbol Ascending
-    act(() => {
-      fireEvent.click(symbolHeader);
-    });
+    fireEvent.click(symbolHeader);
 
     rows = screen.getAllByRole('row'); // Re-query rows after sort
     // After ascending sort, AMZN should be first on page 1 from dummyTradeHistoryData
@@ -110,9 +102,7 @@ describe('TradeHistoryTable', () => {
     expect(within(rows[1]).getAllByRole('cell')[3]).toHaveTextContent('AAPL'); // Alphabetically, AAPL is first.
 
     // Click to sort by Symbol Descending
-    act(() => {
-      fireEvent.click(symbolHeader);
-    });
+    fireEvent.click(symbolHeader);
 
     rows = screen.getAllByRole('row'); // Re-query rows after sort
     // After descending sort, TSLA should be first on page 1 from dummyTradeHistoryData
@@ -192,9 +182,7 @@ describe('TradeHistoryTable', () => {
       render(<TradeHistoryTable tradeHistoryData={dummyTradeHistoryData} />);
       const exportButton = screen.getByText('Export to CSV');
 
-      act(() => {
-        fireEvent.click(exportButton);
-      });
+      fireEvent.click(exportButton);
 
       expect(blobSpy).toHaveBeenCalled();
       expect(createObjectURLSpy).toHaveBeenCalled();

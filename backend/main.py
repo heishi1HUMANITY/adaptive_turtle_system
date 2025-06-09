@@ -109,7 +109,7 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
         # Execute Backtest
         # emergency_stop_activated is defaulted to False
         backtest_engine_results = trading_logic.run_strategy(
-            historical_data=historical_data_dict,
+            historical_data_dict=historical_data_dict, # Changed keyword
             initial_capital=config_dict_for_run["initial_capital"],
             config=config_dict_for_run, # Pass the whole settings_dict as config
             emergency_stop_activated=False

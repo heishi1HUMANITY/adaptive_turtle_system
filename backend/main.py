@@ -83,7 +83,7 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
         # Data Loading
         # Path adjusted to be relative to the backend/main.py file,
         # assuming historical_data.csv is in the project root.
-        raw_data_df = data_loader.load_csv_data('../historical_data.csv')
+        raw_data_df = data_loader.load_csv_data('historical_data.csv')
 
         if raw_data_df.empty:
             raise ValueError("Loaded data is empty.")
@@ -167,14 +167,14 @@ async def create_backtest_job(settings: BacktestSettings, background_tasks: Back
     job_id = str(uuid.uuid4())
     job_store[job_id] = {
         "status": "pending",
-        "parameters": settings.dict(),
+        "parameters": settings.model_dump(),
         "kpis": None,
         "equity_curve": None,
         "trade_log": None,
         "error_message": None,
         "message": "Job initiated." # Optional: a more descriptive initial message
     }
-    background_tasks.add_task(run_backtest_task, job_id, settings.dict())
+    background_tasks.add_task(run_backtest_task, job_id, settings.model_dump())
     return JobCreationResponse(job_id=job_id)
 
 

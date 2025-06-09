@@ -241,16 +241,26 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
 
     status = job["status"]
-    message = None
+    # Prioritize specific message from job_store, fallback to generic status messages
+    message = job.get("message") # Get message set by the background task first
 
     if status == "failed":
-        message = job.get("error_message", "An unknown error occurred.")
-    elif status == "completed":
-        message = "Job completed successfully."
-    elif status == "pending":
-        message = job.get("message", "Job is pending.") # Use initial message if available
-    elif status == "running":
-        message = "Job is currently running."
+        # If a specific error_message exists, it's usually more detailed for failures
+        message = job.get("error_message", message if message else "An unknown error occurred.")
+    elif not message: # If no specific message was set in job_store by the task
+        if status == "completed":
+            message = "Job completed successfully."
+        elif status == "pending":
+            message = "Job is pending." # Default pending message if not set by initiator
+        elif status == "running":
+            message = "Job is currently running."
+        else:
+            message = "Job status unknown." # Fallback for any other status
+
+    # Ensure 'pending' jobs that had an initial message retain it if not overwritten by a more specific one above
+    if status == "pending" and job.get("message") and not message:
+        message = job.get("message")
+
 
     return JobStatusResponse(job_id=job_id, status=status, message=message)
 

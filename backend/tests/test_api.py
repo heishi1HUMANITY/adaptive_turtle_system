@@ -70,6 +70,12 @@ def test_get_status_and_results_flow(client: TestClient):
     assert status_response_pending.status_code == status.HTTP_200_OK
     pending_data = status_response_pending.json()
     assert pending_data["job_id"] == job_id
+
+    # Check the status
+    if pending_data["status"] == "failed":
+        error_message = pending_data.get("message", "No error message provided by API for failed job.")
+        pytest.fail(f"Job {job_id} failed immediately. Error: {error_message}")
+
     # Depending on TestClient's handling of background tasks, it might be "completed" already
     # or "pending". This assertion is thus somewhat flexible.
     assert pending_data["status"] in ["pending", "completed", "running"]

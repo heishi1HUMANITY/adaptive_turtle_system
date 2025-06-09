@@ -126,7 +126,7 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
         kpi_results_dict = performance_analyzer.calculate_all_kpis(
             backtest_results=backtest_engine_results,
             config=config_dict_for_run, # Pass the whole settings_dict as config
-            risk_free_rate=risk_free_rate
+            risk_free_rate_annual=risk_free_rate # Changed keyword
         )
 
         # Store Results

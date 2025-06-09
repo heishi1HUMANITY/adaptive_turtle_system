@@ -12,7 +12,12 @@
     "web-vitals": "^2.1.4",
     "@mui/material": "^5.15.10",
     "@emotion/react": "^11.11.3",
-    "@emotion/styled": "^11.11.0"
+    "@emotion/styled": "^11.11.0",
+    "chart.js": "^4.4.2",
+    "react-chartjs-2": "^5.2.0",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "chartjs-plugin-zoom": "^2.0.1",
+    "react-router-dom": "^6.22.3"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -36,6 +41,12 @@
       "last 1 chrome version",
       "last 1 firefox version",
       "last 1 safari version"
+    ]
+  },
+  "jest": {
+    "transformIgnorePatterns": [
+      "/node_modules/(?!chartjs-adapter-date-fns|react-chartjs-2|chart.js|@kurkle/color)/",
+      "^.+\\.module\\.(css|sass|scss)$"
     ]
   }
 }

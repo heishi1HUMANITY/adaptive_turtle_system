@@ -1,0 +1,53 @@
+.backtest-result-page {
+  padding: 20px;
+  background-color: #f9f9f9; /* Light background for the whole page */
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.results-header h2 {
+  margin: 0;
+  color: #333;
+}
+
+.back-to-settings-link {
+  display: inline-block;
+  padding: 8px 15px;
+  background-color: #007bff;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.back-to-settings-link:hover {
+  background-color: #0056b3;
+}
+
+/* Add some spacing between the components */
+.backtest-result-page > div {
+  margin-bottom: 30px;
+}
+
+/* Ensure the last component (TradeHistoryTable) doesn't have extra margin at the bottom if not needed,
+   or ensure the page itself has enough padding if it's the last element. */
+.backtest-result-page > div:last-child {
+  margin-bottom: 0;
+}
+
+/* Specific component wrapper styles if needed, e.g. for borders or backgrounds */
+.kpi-summary-container,
+.asset-curve-graph-container, /* Assuming you might wrap AssetCurveGraph in a div with this class if needed */
+.trade-history-table-container {
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}

@@ -1,5 +1,5 @@
-import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import React, { act } from 'react';
+import { render, screen, fireEvent } from '@testing-library/react'; // Import act
 import NumericInput from './NumericInput';
 
 describe('NumericInput', () => {
@@ -52,7 +52,9 @@ describe('NumericInput', () => {
       />
     );
     const input = screen.getByLabelText(/Test Label/i);
-    fireEvent.change(input, { target: { value: '20' } });
+    act(() => {
+      fireEvent.change(input, { target: { value: '20' } });
+    });
     expect(mockOnChange).toHaveBeenCalledTimes(1);
     expect(mockOnValidate).toHaveBeenCalledTimes(1);
     expect(mockOnValidate).toHaveBeenCalledWith('20');

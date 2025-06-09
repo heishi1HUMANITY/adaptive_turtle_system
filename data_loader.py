@@ -35,6 +35,7 @@ def load_csv_data(file_path):
 
   try:
     df = pd.read_csv(absolute_file_path, parse_dates=['Timestamp'])
+    df = df.set_index('Timestamp')
     data_logger.info(f"Successfully loaded data from {absolute_file_path}.")
     return df
   except FileNotFoundError:

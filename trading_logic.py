@@ -1095,6 +1095,10 @@ def calculate_position_size(account_equity, risk_percentage, atr,
     if not all(isinstance(val, int) for val in [lot_size, max_units_per_market, current_units_for_market]):
         raise TypeError("Lot size and unit counts must be integers.")
 
+    # Check for NaN ATR value
+    if pd.isna(atr):
+        return 0
+
     if account_equity <= 0:
         raise ValueError("Account equity must be positive.")
     if not (0 < risk_percentage < 1):

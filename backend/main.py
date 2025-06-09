@@ -1,6 +1,7 @@
 import sys
 import os
 import uuid
+import pandas as pd # Added import
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
@@ -54,7 +55,7 @@ class TradeLogEntry(BaseModel):
     timestamp: Any
     commission: Any
     slippage: Any
-    realized_pnl: Any
+    realized_pnl: Optional[float] = None # Changed line
     type: Any # Could be 'entry', 'exit', 'stop_loss', etc.
 
 class BacktestResultsResponse(BaseModel):
@@ -87,10 +88,14 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
 
         if raw_data_df.empty:
             raise ValueError("Loaded data is empty.")
-        if 'Timestamp' not in raw_data_df.columns:
-            # Assuming data_loader standardizes this, but good to check or ensure
-            # Or if data_loader is expected to return a dict of DFs, adapt this
-            raise ValueError("Timestamp column missing in loaded data.")
+
+        if not isinstance(raw_data_df.index, pd.DatetimeIndex):
+            raise ValueError("Data does not have a DatetimeIndex. 'Timestamp' column might be missing or not set as index.")
+
+        required_columns = ['Open', 'High', 'Low', 'Close'] # Define essential columns
+        missing_columns = [col for col in required_columns if col not in raw_data_df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing essential data columns: {', '.join(missing_columns)}")
 
         # Prepare historical_data_dict as expected by run_strategy
         # Assigning the loaded DataFrame to the first market specified.
@@ -109,7 +114,7 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
         # Execute Backtest
         # emergency_stop_activated is defaulted to False
         backtest_engine_results = trading_logic.run_strategy(
-            historical_data=historical_data_dict,
+            historical_data_dict=historical_data_dict, # Changed keyword
             initial_capital=config_dict_for_run["initial_capital"],
             config=config_dict_for_run, # Pass the whole settings_dict as config
             emergency_stop_activated=False
@@ -121,7 +126,7 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
         kpi_results_dict = performance_analyzer.calculate_all_kpis(
             backtest_results=backtest_engine_results,
             config=config_dict_for_run, # Pass the whole settings_dict as config
-            risk_free_rate=risk_free_rate
+            risk_free_rate_annual=risk_free_rate # Changed keyword
         )
 
         # Store Results

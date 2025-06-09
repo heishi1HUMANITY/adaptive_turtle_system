@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react'; // Import within
 import '@testing-library/jest-dom';
 import TradeHistoryTable from './TradeHistoryTable';
 
@@ -46,43 +46,77 @@ describe('TradeHistoryTable', () => {
   });
 
   it('paginates data', () => {
-    render(<TradeHistoryTable tradeHistoryData={dummyTradeHistoryData} />); // 11 items, 10 per page
-    // Check that first page items are present
-    expect(screen.getAllByText('AAPL')[0]).toBeInTheDocument();
-    expect(screen.queryByText('AMZN')).not.toBeInTheDocument(); // AMZN is the 11th item, so on page 2
+    const paginationTestData = [];
+    for (let i = 1; i <= 9; i++) {
+      paginationTestData.push({ id: i, date: `2023-01-${String(i).padStart(2, '0')}T00:00:00Z`, type: 'Buy', symbol: `SYM${i}`, quantity: 1, price: 100 + i, profit: null });
+    }
+    paginationTestData.push({ id: 10, date: '2023-01-10T00:00:00Z', type: 'Buy', symbol: 'SYM10_PAGE_ONE_END', quantity: 1, price: 110, profit: null }); // 10th item
+    paginationTestData.push({ id: 11, date: '2023-01-11T00:00:00Z', type: 'Sell', symbol: 'ONLY_ON_PAGE_TWO', quantity: 1, price: 111, profit: 10 }); // 11th item
+    paginationTestData.push({ id: 12, date: '2023-01-12T00:00:00Z', type: 'Buy', symbol: 'SYM12_PAGE_TWO', quantity: 1, price: 112, profit: null }); // 12th item
 
-    const nextPageButton = screen.getByText('Next');
-    fireEvent.click(nextPageButton);
+    render(<TradeHistoryTable tradeHistoryData={paginationTestData} />);
 
-    // After clicking next, AAPL should not be there (assuming it was only on page 1)
-    // and AMZN should be there.
-    expect(screen.queryByText('AAPL')).not.toBeInTheDocument();
-    expect(screen.getAllByText('AMZN')[0]).toBeInTheDocument();
+    // Check page 1
+    expect(screen.getByText('SYM1')).toBeInTheDocument(); // First item of page 1
+    expect(screen.getByText('SYM10_PAGE_ONE_END')).toBeInTheDocument(); // Last item of page 1
+    expect(screen.queryByText('ONLY_ON_PAGE_TWO')).not.toBeInTheDocument();
+    expect(screen.getByText(/Page 1 of 2/i)).toBeInTheDocument();
+
+
+    const nextPageButton = screen.getByRole('button', { name: /next/i });
+    act(() => {
+      fireEvent.click(nextPageButton);
+    });
+
+    // Check page 2
+    expect(screen.getByText('ONLY_ON_PAGE_TWO')).toBeInTheDocument();
+    expect(screen.getByText('SYM12_PAGE_TWO')).toBeInTheDocument();
+    expect(screen.queryByText('SYM1')).not.toBeInTheDocument(); // Item from page 1 should be gone
+    expect(screen.queryByText('SYM10_PAGE_ONE_END')).not.toBeInTheDocument(); // Item from page 1 should be gone
     expect(screen.getByText(/Page 2 of 2/i)).toBeInTheDocument();
+
+    const prevPageButton = screen.getByRole('button', { name: /previous/i });
+    act(() => {
+      fireEvent.click(prevPageButton);
+    });
+
+    // Back on page 1
+    expect(screen.getByText('SYM1')).toBeInTheDocument();
+    expect(screen.queryByText('ONLY_ON_PAGE_TWO')).not.toBeInTheDocument();
+    expect(screen.getByText(/Page 1 of 2/i)).toBeInTheDocument();
   });
 
   it('calls sort function when header is clicked', () => {
     render(<TradeHistoryTable tradeHistoryData={dummyTradeHistoryData} />);
-    // Check initial order (e.g., by ID or first symbol)
+
     let rows = screen.getAllByRole('row');
-    // queryByText can be useful if the text might not be there
-    // Ensure we are selecting a cell within the data rows, not header.
-    // This checks the symbol in the first cell of the first data row.
-    expect(screen.getAllByRole('row')[1].getAllByRole('cell')[3]).toHaveTextContent('AAPL');
+    // rows[0] is the header row. rows[1] is the first data row.
+    // The 'Symbol' column is the 4th column (index 3).
+    // Initial data order: AAPL, AAPL, MSFT, GOOG, GOOG, TSLA, TSLA, NVDA, NVDA, AMZN (on page 1)
 
+    // Check initial order (AAPL should be in the first data row, 4th cell)
+    expect(within(rows[1]).getAllByRole('cell')[3]).toHaveTextContent('AAPL');
 
-    const symbolHeader = screen.getByText('Symbol'); // Case sensitive as per component
-    fireEvent.click(symbolHeader); // Sort by symbol ascending
+    const symbolHeader = screen.getByText('Symbol'); // Get the 'Symbol' header cell
 
-    // After sorting, re-fetch rows and check content.
-    // This assertion assumes 'AAPL' is alphabetically first among the symbols.
-    expect(screen.getAllByRole('row')[1].getAllByRole('cell')[3]).toHaveTextContent('AAPL');
+    // Click to sort by Symbol Ascending
+    act(() => {
+      fireEvent.click(symbolHeader);
+    });
 
-    fireEvent.click(symbolHeader); // Sort by symbol descending
-    // This assertion assumes 'TSLA' is alphabetically last among the symbols on the first page.
-    // If pagination changes which items are on the first page post-sort, this might need adjustment.
-    // For the given dataset and itemsPerPage=10, TSLA will be on the first page.
-    expect(screen.getAllByRole('row')[1].getAllByRole('cell')[3]).toHaveTextContent('TSLA');
+    rows = screen.getAllByRole('row'); // Re-query rows after sort
+    // After ascending sort, AMZN should be first on page 1 from dummyTradeHistoryData
+    // (AAPL, AMZN, GOOG, MSFT, NVDA, TSLA)
+    expect(within(rows[1]).getAllByRole('cell')[3]).toHaveTextContent('AAPL'); // Alphabetically, AAPL is first.
+
+    // Click to sort by Symbol Descending
+    act(() => {
+      fireEvent.click(symbolHeader);
+    });
+
+    rows = screen.getAllByRole('row'); // Re-query rows after sort
+    // After descending sort, TSLA should be first on page 1 from dummyTradeHistoryData
+    expect(within(rows[1]).getAllByRole('cell')[3]).toHaveTextContent('TSLA');
   });
 
   it('has an export to CSV button', () => {
@@ -92,35 +126,39 @@ describe('TradeHistoryTable', () => {
 
   describe('CSV Export Functionality', () => {
     let mockLink;
-    let createElementSpy;
-    let appendChildSpy;
-    let removeChildSpy;
-    let createObjectURLSpy;
-    let blobSpy;
+    let createElementSpy, appendChildSpy, removeChildSpy;
+    let createObjectURLSpy, blobSpy, clickSpy;
 
     beforeEach(() => {
-      // Setup mocks before each test in this describe block
+      // Mock document.createElement to return a mock link object
       mockLink = {
         href: '',
-        download: '',
-        style: { visibility: '' }, // Ensure style property exists
         setAttribute: jest.fn(),
-        click: jest.fn(),
+        click: jest.fn(), // Mock the click function on the link
+        style: { visibility: '' },
       };
       createElementSpy = jest.spyOn(document, 'createElement').mockReturnValue(mockLink);
+      clickSpy = jest.spyOn(mockLink, 'click'); // Specifically spy on the mockLink's click method
+
       appendChildSpy = jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
       removeChildSpy = jest.spyOn(document.body, 'removeChild').mockImplementation(() => {});
-      createObjectURLSpy = jest.spyOn(URL, 'createObjectURL').mockReturnValue('mocked_url_per_test');
-      // Mock Blob constructor
+
+      // Ensure global.URL and global.URL.createObjectURL are defined before spying
+      if (typeof global.URL === 'undefined') {
+        global.URL = { createObjectURL: jest.fn() };
+      } else if (typeof global.URL.createObjectURL === 'undefined') {
+        global.URL.createObjectURL = jest.fn();
+      }
+      // Now it's safe to spy
+      createObjectURLSpy = jest.spyOn(global.URL, 'createObjectURL').mockReturnValue('mocked_url_per_test');
+
       blobSpy = jest.spyOn(global, 'Blob').mockImplementation((content, options) => ({
         content: content,
-        options: options,
-        // you can add more blob properties if your code uses them e.g. size, type
+        type: options ? options.type : '',
       }));
     });
 
     afterEach(() => {
-      // Restore all mocks after each test
       jest.restoreAllMocks();
     });
 
@@ -137,7 +175,7 @@ describe('TradeHistoryTable', () => {
       expect(createElementSpy).toHaveBeenCalledWith('a');
       expect(mockLink.setAttribute).toHaveBeenCalledWith('href', 'mocked_url_per_test');
       expect(mockLink.setAttribute).toHaveBeenCalledWith('download', 'trade_history.csv');
-      expect(mockLink.click).toHaveBeenCalled();
+      expect(clickSpy).toHaveBeenCalled(); // Check if the spied click on the link was called
       expect(appendChildSpy).toHaveBeenCalledWith(mockLink);
       expect(removeChildSpy).toHaveBeenCalledWith(mockLink);
     });

@@ -68,15 +68,15 @@ class TestNonFunctionalRequirements(unittest.TestCase):
 
         # Default historical data
         self.historical_data_file_path = os.path.join(self.test_dir, "historical_data.csv")
-        self._create_dummy_historical_data(self.historical_data_file_path)
+        # Call with a default that is sufficient for ATR and Donchian periods
+        self._create_dummy_historical_data(self.historical_data_file_path, rows=max(self.default_config_data.get("entry_donchian_period", 20), self.default_config_data.get("atr_period", 20)) + 5)
+
 
     def _write_config(self, data):
         with open(self.config_file_path, 'w') as f:
             json.dump(data, f, indent=2)
 
-    def _create_dummy_historical_data(self, filepath, rows=20): # Changed default rows from 50 to 20
-        # Generate a sequence of valid daily timestamps starting from '2023-01-01'
-        # This will correctly advance months/years if rows is large.
+    def _create_dummy_historical_data(self, filepath, rows=20):
         start_date = pd.to_datetime('2023-01-01 00:00:00')
         timestamps = pd.date_range(start=start_date, periods=rows, freq='D')
 
@@ -87,67 +87,64 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         closes = []
         volumes = []
 
-        entry_donchian_period = 20 # From default config, relevant for signal generation
-
-        # entry_donchian_period = self.default_config_data.get("entry_donchian_period", 20)
-        # Hardcode for clarity, as it's crucial for test data design
-        entry_donchian_period = 20
-
-        entry_donchian_period = 20
+        # Use entry_donchian_period from default_config_data if available, else 20
+        # This ensures test data generation aligns with potential config changes.
+        entry_donchian_period = self.default_config_data.get("entry_donchian_period", 20)
 
         for i in range(rows):
             open_val = base_price + (i * 0.00001) # Minimal trend
-            high_val = open_val + 0.0001
-            low_val = open_val - 0.0001
-            close_val = open_val
+            high_val = open_val + 0.0001 # Default tight high
+            low_val = open_val - 0.0001  # Default tight low
+            close_val = open_val         # Default flat close
             volume = 1000 + i * 10
 
-            if rows >= entry_donchian_period + 2: # Need P+1 for signal, P+2 for it to be processed by main loop
-                # Phase 1: Initial period (0 to P-1), e.g. 0-19
+            # Logic to generate a breakout signal
+            # Condition for signal at loop index `idx = entry_donchian_period + 1` (e.g. 21 for P=20)
+            # is Close[P] > max(High[1...P])
+            if rows >= entry_donchian_period + 2: # Ensure enough data for the logic below
+                # Phase 1: Data for indices 0 to P-1 (e.g., 0-19 for P=20)
+                # These highs will form the Donchian band for the signal.
                 if i < entry_donchian_period:
-                    high_val = base_price + 0.0010 # Max high during these P periods
-                    low_val = base_price - 0.0010
                     open_val = base_price
+                    high_val = base_price + 0.0010 # Capped high for the formation period
+                    low_val = base_price - 0.0010
                     close_val = base_price
 
-                # Phase 2: Breakout bar at index P (e.g., 20)
-                # Signal at loop index P+1 (data index P+1) uses Close[P] and Donchian_Upper[P+1].
-                # Donchian_Upper[P+1] is max(High[1...P]).
-                # We need Close[P] > max(High[1...P]).
-                elif i == entry_donchian_period: # This is index P (e.g., 20)
-                    # Highs for indices 1 to P-1 were base_price + 0.0010.
-                    # Make High[P] also low, so max(High[1...P]) remains base_price + 0.0010.
+                # Phase 2: Data for index P (e.g., 20 for P=20)
+                # Close[P] is the `prev_close` for the signal check at loop index P+1.
+                # High[P] is part of the Donchian window max(High[1...P]).
+                elif i == entry_donchian_period:
+                    open_val = base_price # Can be same as previous
+                    # Set High[P] to be the same as previous highs to control the Donchian band
                     high_val = base_price + 0.0010
-                    open_val = base_price # Keep open simple
-                    low_val = base_price - 0.0005
-                    # This Close[P] must be > max(High[1...P]), which is now base_price + 0.0010.
-                    close_val = base_price + 0.0020
+                    low_val = base_price - 0.0005 # Arbitrary low
+                    # Set Close[P] to be above the established Donchian band (max(High[0...P-1]))
+                    # and also above High[P] for the condition Close[P] > max(High[1...P])
+                    close_val = base_price + 0.0020 # This ensures Close[P] > H_cap (0.0010)
 
-                # Phase 3: Subsequent bars to keep trade open or allow exit logic testing
-                elif i > entry_donchian_period and i < entry_donchian_period + 5: # e.g. indices 21-24
-                    # Let price stay high for a few bars
-                    open_val = close_val # open at previous close
-                    close_val = open_val + (0.0001 if i%2==0 else -0.0001) # slight move
+                # Phase 3: Post-signal bars (optional, to keep trade open)
+                elif i > entry_donchian_period and i < entry_donchian_period + 5:
+                    open_val = closes[-1] # Open at previous close
                     high_val = open_val + 0.0005
                     low_val = open_val - 0.0005
+                    close_val = open_val + (0.0001 if i % 2 == 0 else -0.0001)
 
             # Ensure OHLC consistency
             current_prices = [open_val, high_val, low_val, close_val]
             final_high = max(current_prices)
             final_low = min(current_prices)
+            # Ensure close is within high and low
             final_close = min(max(close_val, final_low), final_high)
+            # Ensure open is within high and low
             final_open = min(max(open_val, final_low), final_high)
-            volume = 1000 + i * 10 # Define volume for each iteration
 
-            if final_high == final_low:
+            if final_high == final_low: # Avoid flat bar
                 final_high += 0.0001
-            if final_close < final_low : final_close = final_low # Should not happen with logic above
-            if final_close > final_high : final_close = final_high # Should not happen
 
             opens.append(final_open)
             highs.append(final_high)
-            lows.append(final_low) # Corrected from low_price to final_low
-            closes.append(final_close) # Corrected from close_price to final_close
+            lows.append(final_low)
+            closes.append(final_close)
             volumes.append(volume)
 
         data = {
@@ -219,13 +216,19 @@ class TestNonFunctionalRequirements(unittest.TestCase):
     @patch('main_backtest.performance_analyzer.generate_text_report')
     def test_different_log_levels(self, mock_generate_report, mock_calculate_kpis, mock_run_strategy, mock_load_data, mock_load_config_main):
         # Common mock setups
-        dummy_df = pd.DataFrame({
-            'Timestamp': pd.to_datetime(['2023-01-01']),
-            'Open': [1.0], 'High': [1.1], 'Low': [0.9], 'Close': [1.05], 'Volume': [100]
-        })
-        # Ensure a fresh copy of dummy_df is returned each time load_csv_data is called
-        # to prevent inplace modifications in main_backtest.main() from affecting subsequent calls.
-        mock_load_data.side_effect = lambda *args, **kwargs: dummy_df.copy()
+        # Provide a slightly more substantial dummy_df to avoid issues with ATR calculation if strategy runs further
+        num_rows_dummy = max(self.default_config_data.get("entry_donchian_period", 20), self.default_config_data.get("atr_period", 20)) + 5
+        dummy_df_data = {
+            'Timestamp': pd.date_range(start='2023-01-01', periods=num_rows_dummy, freq='D'),
+            'Open': [1.0 + i*0.001 for i in range(num_rows_dummy)], # Use different data than global dummy
+            'High': [1.005 + i*0.001 for i in range(num_rows_dummy)],
+            'Low': [0.995 + i*0.001 for i in range(num_rows_dummy)],
+            'Close': [1.0 + i*0.001 for i in range(num_rows_dummy)],
+            'Volume': [100 + i*10 for i in range(num_rows_dummy)]
+        }
+        dummy_df_for_this_test = pd.DataFrame(dummy_df_data)
+
+        mock_load_data.side_effect = lambda *args, **kwargs: dummy_df_for_this_test.copy()
         mock_run_strategy.return_value = {
             "equity_curve": [(pd.Timestamp('2023-01-01'), 1000000)], "trade_log": [], "final_capital": 1000000,
             "portfolio_summary": {"initial_capital": 1000000, "final_equity": 1000000, "total_trades": 0}
@@ -235,148 +238,71 @@ class TestNonFunctionalRequirements(unittest.TestCase):
 
         # --- Test DEBUG level ---
         debug_log_file_path = os.path.join(self.test_dir, "debug_test.log")
-        # Use deepcopy to prevent modification of self.default_config_data's nested dicts
         debug_config = copy.deepcopy(self.default_config_data)
         debug_config["logging"]["log_level"] = "DEBUG"
         debug_config["logging"]["log_file_path"] = debug_log_file_path
         self._write_config(debug_config)
         mock_load_config_main.return_value = debug_config
-
-        main_backtest.main() # main_backtest.py now has a DEBUG log message
+        main_backtest.main()
 
         self.assertTrue(os.path.exists(debug_log_file_path))
         with open(debug_log_file_path, 'r') as f:
             log_content_debug = f.read()
-
         self.assertIn("Test DEBUG message: main_backtest main_logger initialized.", log_content_debug)
-        self.assertIn("Configuration loaded:", log_content_debug) # INFO message should also be there
+        self.assertIn("Configuration loaded:", log_content_debug)
 
-        # --- Test WARNING level ---
-        # Clear log file for the next run or use a different log file
-        if os.path.exists(debug_log_file_path): os.remove(debug_log_file_path) # clean up previous log
-
-        # Use deepcopy here as well
-        warning_config = copy.deepcopy(self.default_config_data)
-        warning_config["logging"]["log_level"] = "WARNING"
-        # Make logging config incomplete to trigger the warning in main_backtest.py
-        del warning_config["logging"]["log_file_path"]
-        self._write_config(warning_config)
-        mock_load_config_main.return_value = warning_config
-
+        # --- Test WARNING level (console output part for incomplete config) ---
+        if os.path.exists(debug_log_file_path): os.remove(debug_log_file_path)
+        warning_config_incomplete = copy.deepcopy(self.default_config_data)
+        warning_config_incomplete["logging"]["log_level"] = "WARNING"
+        del warning_config_incomplete["logging"]["log_file_path"] # Trigger incompleteness
+        self._write_config(warning_config_incomplete)
+        mock_load_config_main.return_value = warning_config_incomplete
         main_backtest.main()
-
-        # Log path will be the default one since it was removed from config
-        default_log_path_in_setup = os.path.join(self.test_dir, "test_run.log") # as per setUp default
-                                                                                # but main_backtest uses "trading_system.log" if key missing
-                                                                                # let's check the actual default path logic in main_backtest.py
-        # main_backtest.py: default_log_path = "trading_system.log"
-        # This means the log file will be created in the CWD of the test runner, not self.test_dir
-        # This is not ideal. The test should control the log output path.
-        # For this test, let's assume the log path in self.default_config_data is used
-        # if only "log_level" is changed.
-        # The warning is about missing keys, so it uses the default path from main_backtest's code.
-        # This test needs the log file path to be predictable.
-
-        # Let's refine: the warning log itself might go to console if file handler isn't fully set up
-        # The file log should only contain WARNING and ERROR.
-        # Check console output for the warning about default log settings.
-        # The print statement in main_backtest.py:
-        # print(f"Warning: Logging configuration missing or incomplete in config.json. ...")
         self.assertIn("Warning: Logging configuration missing or incomplete", self.mock_stdout.getvalue())
 
-        # Check file log content for WARNING level
-        # The log file path is now the one derived inside main_backtest if "log_file_path" is missing
-        # This is "trading_system.log" in the CWD. This makes testing hard.
-        # For now, let's assume the test's default config log path is somehow used or skip file check for WARNING.
+        # --- Test WARNING Log Level (File Content for specific warning message) ---
+        default_log_file_to_clean = self.default_config_data["logging"]["log_file_path"] # Path from original default config
+        if os.path.exists(default_log_file_to_clean): os.remove(default_log_file_to_clean)
 
-        # To make this testable:
-        # 1. main_backtest.py should use the log_file_path from config even if only log_level is there.
-        # My code for main_backtest.py:
-        # log_file_path = logging_config.get('log_file_path', default_log_path)
-        # This is correct. So if log_file_path key is deleted, it uses default_log_path = "trading_system.log"
-        # This means the test log will be in CWD. This is bad for test hygiene.
-        # For this sub-part, we are only checking the console warning.
-        # Proper file content check for WARNING level is done below.
-
-        # --- Test WARNING Log Level (File Content) ---
-        # Clean up the default log file path from setUp to prevent interference
-        default_log_file_to_clean = self.default_config_data["logging"]["log_file_path"]
-        if os.path.exists(default_log_file_to_clean): os.remove(default_log_file_to_clean) # Clean up default log before WARNING file test
-
-        warning_config = self.default_config_data.copy()
-        warning_config["logging"]["log_level"] = "WARNING"
-        warning_config["logging"]["log_file_path"] = os.path.join(self.test_dir, "warning_test.log")
-        warning_config["emergency_stop"] = True # To ensure a WARNING message is logged
-        self._write_config(warning_config)
-
-        # Ensure the global mock_load_config_main is set for this call
-        mock_load_config_main.return_value = warning_config
-
-        # Specific context for this main() call to ensure mocks are correctly applied
-        # The dummy_df for mock_load_data is defined at the start of the test method.
-        # We re-assert its behavior here if needed, or rely on the side_effect already set.
-        # mock_load_data.side_effect should still be active from the beginning of the test method.
+        # Use a different log file for this specific warning test
+        warning_specific_log_path = os.path.join(self.test_dir, "warning_specific_test.log")
+        warning_config_specific = copy.deepcopy(self.default_config_data) # Fresh copy
+        warning_config_specific["logging"]["log_level"] = "WARNING"
+        warning_config_specific["logging"]["log_file_path"] = warning_specific_log_path
+        warning_config_specific["emergency_stop"] = True # To ensure a WARNING message is logged
+        self._write_config(warning_config_specific)
+        mock_load_config_main.return_value = warning_config_specific
         main_backtest.main()
 
-        warning_log_file_path = warning_config["logging"]["log_file_path"]
-        self.assertTrue(os.path.exists(warning_log_file_path))
-        with open(warning_log_file_path, 'r') as f:
+        self.assertTrue(os.path.exists(warning_specific_log_path))
+        with open(warning_specific_log_path, 'r') as f:
             log_content_warning = f.read()
-
         self.assertNotIn("Test DEBUG message: main_backtest main_logger initialized.", log_content_warning)
-        self.assertNotIn("Configuration loaded:", log_content_warning) # INFO message
-        self.assertIn("EMERGENCY STOP ACTIVATED", log_content_warning) # WARNING message
+        self.assertNotIn("Configuration loaded:", log_content_warning)
+        self.assertIn("EMERGENCY STOP ACTIVATED", log_content_warning)
         self.assertRegex(log_content_warning, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} - WARNING - main_backtest - EMERGENCY STOP ACTIVATED")
 
     def test_console_warning_for_default_logging_config(self):
-        # Test the print warning if logging config is incomplete
-        # Use deepcopy here as well
         config_missing_logging_keys = copy.deepcopy(self.default_config_data)
-        # Example: remove log_level, keeping log_file_path to make the file predictable for cleanup
-        # but still triggering the "incomplete" warning.
         del config_missing_logging_keys["logging"]["log_level"]
-        # Path where main_backtest will write if log_file_path is also missing (for cleanup)
-        # default_main_log_path = "trading_system.log" # CWD
-
         self._write_config(config_missing_logging_keys)
-
-        # Patch load_config to return this modified config
-        # We don't need to mock other functions as main() might exit early or just setup logging.
         with patch('main_backtest.config_loader.load_config', return_value=config_missing_logging_keys):
-            # We expect main to run far enough to setup logging and print the warning.
-            # It might error out later if other parts of config are not set up for a full run,
-            # but the warning should have been printed.
-            try:
-                main_backtest.main()
-            except SystemExit: # Or if main() calls exit()
-                pass
-            except Exception: # Catch any other exception if main() tries to proceed too far with partial config
-                pass
-
-        self.assertIn("Warning: Logging configuration missing or incomplete", self.mock_stdout.getvalue())
-        # Clean up default log file if created in CWD by this partial run
-        # if os.path.exists(default_main_log_path):
-        #     os.remove(default_main_log_path)
-
-
-    # --- Error Handling Tests ---
-
-    def test_missing_config_file(self):
-        # This test needs to check behavior when config_loader.load_config itself fails.
-        # main_backtest.py should catch this and print a critical error to console.
-
-        # We simulate load_config raising FileNotFoundError
-        # The actual config_loader.load_config('config.json') is called within main_backtest.main()
-        # We need to ensure 'config.json' does not exist in the context of main_backtest.main()
-        # The easiest way is to patch config_loader.load_config to raise the error.
-
-        with patch('main_backtest.config_loader.load_config', side_effect=FileNotFoundError("Simulated FileNotFoundError for config.json")):
-            # We might need to catch SystemExit if main() calls sys.exit()
             try:
                 main_backtest.main()
             except SystemExit:
-                pass # Expected if main exits upon critical error
+                pass
+            except Exception:
+                pass
+        self.assertIn("Warning: Logging configuration missing or incomplete", self.mock_stdout.getvalue())
 
+    # --- Error Handling Tests ---
+    def test_missing_config_file(self):
+        with patch('main_backtest.config_loader.load_config', side_effect=FileNotFoundError("Simulated FileNotFoundError for config.json")):
+            try:
+                main_backtest.main()
+            except SystemExit:
+                pass
         self.assertIn("Critical Error: Required file not found before logger initialization", self.mock_stdout.getvalue())
 
     @patch('main_backtest.data_loader.load_csv_data')
@@ -384,16 +310,11 @@ class TestNonFunctionalRequirements(unittest.TestCase):
     @patch('main_backtest.performance_analyzer.calculate_all_kpis')
     @patch('main_backtest.performance_analyzer.generate_text_report')
     def test_corrupted_config_file(self, mock_report, mock_kpis, mock_strategy, mock_data_load):
-        # Simulate config_loader.load_config raising JSONDecodeError
         with patch('main_backtest.config_loader.load_config', side_effect=json.JSONDecodeError("Simulated JSON error", "doc", 0)):
             try:
                 main_backtest.main()
             except SystemExit:
                 pass
-
-        # Check for the specific ValueError message related to JSONDecodeError
-        # The exception string includes details like "Simulated JSON error: line 1 column 1 (char 0)"
-        # We'll check for the part of the message that is consistent.
         self.assertIn("Critical Error: Value error before logger initialization: Simulated JSON error", self.mock_stdout.getvalue())
 
     @patch('main_backtest.config_loader.load_config')
@@ -401,25 +322,18 @@ class TestNonFunctionalRequirements(unittest.TestCase):
     @patch('main_backtest.performance_analyzer.calculate_all_kpis')
     @patch('main_backtest.performance_analyzer.generate_text_report')
     def test_missing_historical_data_file(self, mock_report, mock_kpis, mock_strategy, mock_load_config):
-        mock_load_config.return_value = self.default_config_data # Provide a valid config
-
-        # Patch data_loader.load_csv_data to simulate FileNotFoundError
+        mock_load_config.return_value = self.default_config_data
         with patch('main_backtest.data_loader.load_csv_data', side_effect=FileNotFoundError(f"Simulated FileNotFoundError for {self.historical_data_file_path}")):
             try:
                 main_backtest.main()
             except SystemExit:
                 pass
-
         log_file_path = self.default_config_data["logging"]["log_file_path"]
         self.assertTrue(os.path.exists(log_file_path))
         with open(log_file_path, 'r') as f:
             log_content = f.read()
-
-        # data_loader.py's logger would have logged the error (via stderr if filelog failed, or filelog if it worked)
-        # main_backtest.py would catch the FileNotFoundError and log "Error: Required file not found"
-        # We check for main_backtest's log message.
         self.assertIn("main_backtest - Error: Required file not found", log_content)
-        self.assertIn("Simulated FileNotFoundError", log_content) # The exception message itself
+        self.assertIn("Simulated FileNotFoundError", log_content)
 
     @patch('main_backtest.config_loader.load_config')
     @patch('main_backtest.trading_logic.run_strategy')
@@ -427,65 +341,55 @@ class TestNonFunctionalRequirements(unittest.TestCase):
     @patch('main_backtest.performance_analyzer.generate_text_report')
     def test_empty_historical_data_file(self, mock_report, mock_kpis, mock_strategy, mock_load_config):
         mock_load_config.return_value = self.default_config_data
-
-        # Patch data_loader.load_csv_data to simulate EmptyDataError
-        # pd.errors.EmptyDataError inherits from Exception, not specific enough for some setups.
-        # Let's use a custom exception that inherits from pd.errors.EmptyDataError if pandas is fully mocked,
-        # or just ensure the behavior of returning an empty DataFrame is handled.
-        # The current data_loader.py re-raises pd.errors.EmptyDataError.
         with patch('main_backtest.data_loader.load_csv_data', side_effect=pd.errors.EmptyDataError("Simulated EmptyDataError")):
             try:
                 main_backtest.main()
-            except SystemExit: # main_backtest calls return, not sys.exit for this case.
-                pass # This might not be hit if main just returns.
-            except pd.errors.EmptyDataError: # Should be caught by main_backtest's general Exception handler
+            except SystemExit:
                 pass
-
-
+            except pd.errors.EmptyDataError:
+                pass
         log_file_path = self.default_config_data["logging"]["log_file_path"]
         self.assertTrue(os.path.exists(log_file_path))
         with open(log_file_path, 'r') as f:
             log_content = f.read()
-
-        # data_loader.py logs "Data file is empty"
-        # main_backtest.py catches the EmptyDataError via general Exception handler and logs it.
-        # The specific message "Error: Historical data file could not be loaded or is empty. Exiting."
-        # is for when load_csv_data *returns* an empty df, not when it raises EmptyDataError.
-        # When EmptyDataError is raised and caught by the ValueError block in main_backtest.py,
-        # the log message is "Error: Value error encountered: <exception_message>".
         self.assertIn("main_backtest - Error: Value error encountered: Simulated EmptyDataError", log_content)
-        self.assertIn("Simulated EmptyDataError", log_content) # Ensure the specific error is still part of it
+        self.assertIn("Simulated EmptyDataError", log_content)
 
     @patch('main_backtest.config_loader.load_config')
     @patch('main_backtest.data_loader.load_csv_data')
-    @patch('main_backtest.trading_logic.calculate_position_size') # Target for mocking
+    @patch('main_backtest.trading_logic.calculate_position_size')
     @patch('main_backtest.performance_analyzer.calculate_all_kpis')
     @patch('main_backtest.performance_analyzer.generate_text_report')
     def test_trading_logic_value_error_propagation(self, mock_report, mock_kpis, mock_calc_pos_size, mock_load_data, mock_load_config):
-        # Setup: Valid config
         mock_load_config.return_value = self.default_config_data
 
-        # Setup mock_load_data to return a valid DataFrame
-        # Generate a sequence of valid daily timestamps
-        start_date = pd.to_datetime('2023-01-01')
-        timestamps = pd.date_range(start=start_date, periods=50, freq='D')
-        dummy_df = pd.DataFrame({
-            'Timestamp': timestamps,
-            'Open': [1.1000 + i*0.001 for i in range(50)],
-            'High': [1.1050 + i*0.001 for i in range(50)],
-            'Low': [1.0950 + i*0.001 for i in range(50)],
-            'Close': [1.1020 + i*0.001 for i in range(50)],
-            'Volume': [1000 + i*10 for i in range(50)]
-        })
-        mock_load_data.return_value = dummy_df
+        # Use a specific dummy_df for this test to ensure enough data for ATR etc.
+        # if the new _create_dummy_historical_data isn't used by default by this test's mock_load_data
+        num_rows_for_test = 50
+        test_specific_df_data = {
+            'Timestamp': pd.date_range(start='2023-01-01', periods=num_rows_for_test, freq='D'),
+            'Open': [1.1000 + i*0.0001 for i in range(num_rows_for_test)],
+            'High': [1.1000 + 0.0010 + i*0.0001 for i in range(num_rows_for_test)], # Data that should generate a trade
+            'Low': [1.1000 - 0.0010 + i*0.0001 for i in range(num_rows_for_test)],
+            'Close': [1.1000 + 0.0020 + i*0.0001 for i in range(num_rows_for_test)], # Breakout close
+            'Volume': [1000 + i*10 for i in range(num_rows_for_test)]
+        }
+        # Ensure High[P] is capped for Donchian, and Close[P] breaks it.
+        # P = self.default_config_data.get("entry_donchian_period", 20)
+        # test_specific_df_data['High'][P] = test_specific_df_data['Low'][P] + 0.0010 # Keep High[P] low
+        # test_specific_df_data['Close'][P] = test_specific_df_data['Low'][P] + 0.0020 # Make Close[P] break max(High[0..P-1])
 
-        # Configure the mock for calculate_position_size to raise ValueError
+        # The _create_dummy_historical_data should be providing data that generates trades now.
+        # So, we can rely on the mock_load_data set up by _run_main_for_emergency_stop_test
+        # or ensure this test uses a DataFrame from _create_dummy_historical_data.
+        # For simplicity, let's ensure this test uses data from _create_dummy_historical_data.
+        self._create_dummy_historical_data(self.historical_data_file_path, rows=num_rows_for_test)
+        current_dummy_df = pd.read_csv(self.historical_data_file_path, parse_dates=['Timestamp'])
+        mock_load_data.return_value = current_dummy_df
+
         mock_calc_pos_size.side_effect = ValueError("Simulated ValueError from calculate_position_size")
-
-        # Mocks for functions called after run_strategy, to prevent them from running
-        mock_kpis.return_value = {"total_return": 0.0} # Must return a dict
+        mock_kpis.return_value = {"total_return": 0.0}
         mock_report.return_value = None
-
 
         try:
             main_backtest.main()
@@ -501,85 +405,38 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         self.assertTrue(os.path.exists(log_file_path))
         with open(log_file_path, 'r') as f:
             log_content = f.read()
-
-        # main_backtest.py's `except ValueError as e:` block should catch this.
-        # It logs: main_logger.error(f"Error: Value error encountered: {e}.")
-        # The general "except Exception as e" block logs:
-        # main_logger.exception(f"An unexpected error occurred during the backtest process: {e}")
-        # We expect the more specific ValueError to be caught and logged.
         expected_log_message = "main_backtest - Error: Value error encountered: Simulated ValueError from calculate_position_size"
         self.assertIn(expected_log_message, log_content)
-        # Ensure the specific error text is also present, which is part of the expected_log_message
         self.assertIn("Simulated ValueError from calculate_position_size", log_content)
 
     # --- Emergency Stop Tests ---
-
     def _run_main_for_emergency_stop_test(self, config_overrides):
-        """
-        Helper function to run main_backtest.main() with a custom config
-        for emergency stop testing.
-        It mocks parts of the pipeline to focus on trade generation.
-        Returns the trade_log from backtest_results.
-        """
-        test_config = self.default_config_data.copy()
+        test_config = copy.deepcopy(self.default_config_data) # Use deepcopy
         test_config.update(config_overrides)
-        if "logging" not in test_config: # Ensure logging section exists for path
-            test_config["logging"] = self.default_config_data["logging"].copy()
+        if "logging" not in test_config:
+            test_config["logging"] = copy.deepcopy(self.default_config_data["logging"])
         test_config["logging"]["log_file_path"] = os.path.join(self.test_dir, "emergency_stop_test.log")
         self._write_config(test_config)
 
-        # Mock config loader to return our specific config
         with patch('main_backtest.config_loader.load_config', return_value=test_config) as mock_cfg_load, \
              patch('main_backtest.data_loader.load_csv_data') as mock_data_load, \
+             patch('main_backtest.trading_logic.calculate_position_size') as mock_calc_pos_size, \
              patch('main_backtest.performance_analyzer.calculate_all_kpis') as mock_kpis, \
              patch('main_backtest.performance_analyzer.generate_text_report') as mock_report:
 
-            # Provide data that should generate trades if not stopped
-            # Data needs to be long enough for Donchian channels to form (e.g. > 20 periods for entry)
-            self._create_dummy_historical_data(self.historical_data_file_path, rows=50)
-            dummy_df = pd.read_csv(self.historical_data_file_path, parse_dates=['Timestamp'])
-            # Do NOT set index here; main_backtest.py will handle it after receiving the df.
-            mock_data_load.return_value = dummy_df
+            mock_calc_pos_size.return_value = 1000 # Force position size to be > 0. Added mock for calculate_position_size above.
+            self._create_dummy_historical_data(self.historical_data_file_path, rows=50) # Ensure enough rows
+            dummy_df_for_run = pd.read_csv(self.historical_data_file_path, parse_dates=['Timestamp'])
+            mock_data_load.return_value = dummy_df_for_run # Use this specific df
 
-            # Let run_strategy execute, but mock KPI/report
             mock_kpis.return_value = {"total_return": 0.0}
             mock_report.return_value = None
 
-            # Capture results from run_strategy by patching it or modifying main
-            # For simplicity, let's patch run_strategy to store its result for inspection
-            # However, the goal is to test main_backtest.main()'s integration of emergency stop
-            # So, we run main and then inspect the results if main_backtest is modified to return them
-            # Or, if main_backtest saves them, load from there.
-            # For now, assume main_backtest.main might not directly return results.
-            # We will rely on side effects (e.g. trade log being part of results passed to KPI calc)
-
-            # To get trade_log, we need to capture the 'backtest_results' variable in main_backtest.main
-            # One way is to patch 'performance_analyzer.calculate_all_kpis' and inspect its first argument.
-
-            # Simplified: We'll let main run. If it produces a report, that's a side effect.
-            # The most direct test for "no new trades" is if the trade_log is empty.
-            # To access trade_log, we need to modify main_backtest.main to return it,
-            # or patch run_strategy and check what it was called with / what it would do.
-
-            # Let's assume run_strategy is the source of truth for the trade_log.
-            # We can patch trading_logic.run_strategy to capture its actual result.
-
-            # This is tricky. The call to run_strategy is inside main_backtest.
-            # If we patch trading_logic.run_strategy, the one imported by main_backtest is patched.
-
-            # Store the actual run_strategy to call it, and capture its result.
-            # This is getting complicated. Let's simplify the test's focus.
-            # The core logic is: if emergency_stop: true, section 2.3 in run_strategy is skipped.
-            # This means no new orders of type "entry" should be in the trade_log.
-
-            # We need to get the backtest_results.
-            # Let's patch `performance_analyzer.calculate_all_kpis` and grab `backtest_results` from its call.
-
-            global_results_store = {} # Simple way to get results out
-            def capture_results_for_kpi(backtest_res, cfg, risk_free):
+            global_results_store = {}
+            # Signature must match the actual keyword argument 'risk_free_rate_annual'
+            def capture_results_for_kpi(backtest_res, cfg, risk_free_rate_annual):
                 global_results_store['backtest_results'] = backtest_res
-                return {"total_return": 0.0} # Mocked KPI result
-
+                return {"total_return": 0.0}
             mock_kpis.side_effect = capture_results_for_kpi
 
             main_backtest.main()
@@ -587,39 +444,23 @@ class TestNonFunctionalRequirements(unittest.TestCase):
 
     def test_emergency_stop_true_no_new_trades(self):
         trade_log = self._run_main_for_emergency_stop_test({"emergency_stop": True})
-
-        # Check that the log file indicates emergency stop was active
         log_file_path = os.path.join(self.test_dir, "emergency_stop_test.log")
         self.assertTrue(os.path.exists(log_file_path))
         with open(log_file_path, 'r') as f:
             log_content = f.read()
         self.assertIn("EMERGENCY STOP ACTIVATED: New trade entries will be disabled.", log_content)
-
-        # Check that no new entry trades were made
         entry_trades = [trade for trade in trade_log if trade.get("type") == "entry"]
         self.assertEqual(len(entry_trades), 0, "No new entry trades should be made when emergency stop is active.")
 
     def test_emergency_stop_false_allows_trades(self):
         trade_log = self._run_main_for_emergency_stop_test({"emergency_stop": False})
-
-        # Check that the log file indicates emergency stop was not active
         log_file_path = os.path.join(self.test_dir, "emergency_stop_test.log")
         self.assertTrue(os.path.exists(log_file_path))
         with open(log_file_path, 'r') as f:
             log_content = f.read()
         self.assertIn("Emergency stop is not activated. System operating normally.", log_content)
-
-        # Check that entry trades *could* be made (if signals generated).
-        # The dummy data is designed to be simple and might not generate complex signals.
-        # For this test, we're checking that the mechanism *allows* trades.
-        # If the dummy data reliably produces trades, we can assert len(entry_trades) > 0.
-        # For now, just assert that the log does not say "EMERGENCY STOP ACTIVATED".
-        # A more robust check would be to ensure some trades if data is guaranteed to produce them.
-        # Given our dummy data and simple strategy, it should produce entries.
         entry_trades = [trade for trade in trade_log if trade.get("type") == "entry"]
         self.assertTrue(len(entry_trades) > 0, "Entry trades should be allowed and generated with this data when emergency stop is false.")
 
-
 if __name__ == '__main__':
-    # This allows running the tests directly from this file
     unittest.main(argv=['first-arg-is-ignored'], exit=False)

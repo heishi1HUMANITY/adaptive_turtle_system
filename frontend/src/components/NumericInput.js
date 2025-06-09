@@ -1,10 +1,10 @@
 import React from 'react';
 
-const NumericInput = ({ label, value, onChange, tooltip, disabled, error, onValidate }) => {
+const NumericInput = ({ label, value, onChange, tooltip, disabled, error, onValidate, id }) => {
   const handleChange = (e) => {
     const newValue = e.target.value;
     if (onChange) {
-      onChange(e); // Propagate the original event or just the value
+      onChange(e);
     }
     if (onValidate) {
       onValidate(newValue);
@@ -13,12 +13,13 @@ const NumericInput = ({ label, value, onChange, tooltip, disabled, error, onVali
 
   return (
     <div>
-      <label>
+      <label htmlFor={id}> {/* Use htmlFor */}
         {label}
         {tooltip && <span title={tooltip}> (?)</span>}
       </label>
       <input
         type="number"
+        id={id} {/* Set id on input */}
         value={value}
         onChange={handleChange}
         disabled={disabled}

@@ -132,6 +132,7 @@ const BacktestSettingsForm = () => {
       <h2>2. シミュレーション条件</h2>
       <div>
         <NumericInput
+          id="initialCapital"
           label="初期口座資金 (JPY)"
           value={initialCapital}
           onChange={(e) => setInitialCapital(e.target.value)}
@@ -141,6 +142,7 @@ const BacktestSettingsForm = () => {
           disabled={isExecuting}
         />
         <NumericInput
+          id="spread"
           label="スプレッド (pips)"
           value={spread}
           onChange={(e) => setSpread(e.target.value)}
@@ -150,6 +152,7 @@ const BacktestSettingsForm = () => {
           disabled={isExecuting}
         />
         <NumericInput
+          id="commission"
           label="手数料 (円/ロット)"
           value={commission}
           onChange={(e) => setCommission(e.target.value)}
@@ -163,6 +166,7 @@ const BacktestSettingsForm = () => {
       <h2>3. 戦略パラメータ (適応型短期タートルシステム)</h2>
       <div>
         <NumericInput
+          id="entryPeriod"
           label="エントリー期間 (ドンチャン)"
           value={entryPeriod}
           onChange={(e) => setEntryPeriod(e.target.value)}
@@ -172,6 +176,7 @@ const BacktestSettingsForm = () => {
           disabled={isExecuting}
         />
         <NumericInput
+          id="exitPeriod"
           label="エグジット期間 (ドンチャン)"
           value={exitPeriod}
           onChange={(e) => setExitPeriod(e.target.value)}
@@ -181,6 +186,7 @@ const BacktestSettingsForm = () => {
           disabled={isExecuting}
         />
         <NumericInput
+          id="atrPeriod"
           label="ATR期間"
           value={atrPeriod}
           onChange={(e) => setAtrPeriod(e.target.value)}
@@ -190,6 +196,7 @@ const BacktestSettingsForm = () => {
           disabled={isExecuting}
         />
         <NumericInput
+          id="riskPercentage"
           label="リスク割合 (%)"
           value={riskPercentage}
           onChange={(e) => setRiskPercentage(e.target.value)}

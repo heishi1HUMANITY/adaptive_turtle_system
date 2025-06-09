@@ -55,7 +55,7 @@ class TradeLogEntry(BaseModel):
     timestamp: Any
     commission: Any
     slippage: Any
-    realized_pnl: Any
+    realized_pnl: Optional[float] = None # Changed line
     type: Any # Could be 'entry', 'exit', 'stop_loss', etc.
 
 class BacktestResultsResponse(BaseModel):

@@ -15,11 +15,11 @@ beforeEach(() => {
   fetch.mockClear(); // Clear call history
 });
 
-test('renders App component and shows initial API status text', () => {
+test('renders App component and shows initial API status text', async () => {
   render(<App />);
   // Check for the static text "API Status:"
-  // This appears before the fetch call completes.
-  const initialStatusText = screen.getByText(/API Status:/i);
+  // Using findByText to ensure any initial state updates are processed.
+  const initialStatusText = await screen.findByText(/API Status:/i);
   expect(initialStatusText).toBeInTheDocument();
 });
 
@@ -52,7 +52,8 @@ test('handles API fetch error', async () => {
   expect(fetch).toHaveBeenCalledWith('http://localhost:8000/api/health');
 
   // The text "API Status:" should still be there, but not "ok"
-  const initialStatusText = screen.getByText(/API Status:/i);
+  // Using findByText to ensure any initial state updates are processed.
+  const initialStatusText = await screen.findByText(/API Status:/i);
   expect(initialStatusText).toBeInTheDocument();
 
   // Ensure "API Status: ok" does NOT appear

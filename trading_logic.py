@@ -794,97 +794,100 @@ def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital:
                         print(f"Error closing position after TP for {symbol} at {timestamp}: {e}")
 
         # Section 2.3: Process new entry signals (Donchian Channel breakouts)
-        for symbol in config.get('markets', []):
-            if portfolio_manager.get_open_position(symbol): continue # Skip if already holding a position
+        if not emergency_stop_activated:
+            for symbol in config.get('markets', []):
+                if portfolio_manager.get_open_position(symbol): continue # Skip if already holding a position
 
-            if symbol not in processed_historical_data or timestamp not in processed_historical_data[symbol].index:
-                continue # Skip if market data for this timestamp is missing
+                if symbol not in processed_historical_data or timestamp not in processed_historical_data[symbol].index:
+                    continue # Skip if market data for this timestamp is missing
 
-            symbol_data_df = processed_historical_data[symbol]
-            current_close = symbol_data_df.loc[timestamp, 'Close']
-            if pd.isna(current_close): continue # Skip if close price is NaN
+                symbol_data_df = processed_historical_data[symbol]
+                current_close = symbol_data_df.loc[timestamp, 'Close']
+                if pd.isna(current_close): continue # Skip if close price is NaN
 
-            # Define expected column names for indicators
-            atr_col = f'atr_{atr_period_val}'
-            donchian_upper_entry_col = f'donchian_upper_entry_{entry_donchian_period_val}'
-            donchian_lower_entry_col = f'donchian_lower_entry_{entry_donchian_period_val}'
+                # Define expected column names for indicators
+                atr_col = f'atr_{atr_period_val}'
+                donchian_upper_entry_col = f'donchian_upper_entry_{entry_donchian_period_val}'
+                donchian_lower_entry_col = f'donchian_lower_entry_{entry_donchian_period_val}'
 
-            # Ensure required indicator data is present
-            if not all(col in symbol_data_df.columns for col in [atr_col, donchian_upper_entry_col, donchian_lower_entry_col]):
-                continue # Skip if indicators are missing
+                # Ensure required indicator data is present
+                if not all(col in symbol_data_df.columns for col in [atr_col, donchian_upper_entry_col, donchian_lower_entry_col]):
+                    continue # Skip if indicators are missing
 
-            # Generate entry signals (1 for long, -1 for short, 0 for no signal)
-            signal_series = generate_entry_signals(
-                close=symbol_data_df['Close'],
-                donchian_upper_entry=symbol_data_df[donchian_upper_entry_col],
-                donchian_lower_entry=symbol_data_df[donchian_lower_entry_col],
-                entry_period=entry_donchian_period_val
-            )
-            current_signal = signal_series.loc[timestamp] if timestamp in signal_series.index else 0
-            if pd.isna(current_signal): current_signal = 0
-
-            if current_signal == 1 or current_signal == -1: # If there's an entry signal
-                # Calculate position size based on risk parameters
-                account_equity = portfolio_manager.get_total_equity(current_prices)
-                risk_percentage_per_trade = config['risk_per_trade'] / 100 if config['risk_per_trade'] >= 1 else config['risk_per_trade']
-                current_atr = symbol_data_df.loc[timestamp, atr_col]
-                if pd.isna(current_atr) or current_atr <= 0: continue # ATR must be valid
-
-                # Ensure symbol-specific config items are present
-                if not (symbol in config['pip_point_value'] and \
-                        symbol in config['lot_size'] and \
-                        symbol in config['max_units_per_market']):
-                    print(f"Warning: Missing symbol-specific config (pip_point_value, lot_size, or max_units_per_market) for {symbol}. Skipping entry.")
-                    continue
-
-                pip_val_per_unit = config['pip_point_value'][symbol]
-                lot_sz = config['lot_size'][symbol]
-                pip_val_per_lot = pip_val_per_unit * lot_sz
-                market_max_units = config['max_units_per_market'][symbol]
-                current_total_risk_perc = portfolio_manager.get_current_total_open_risk_percentage()
-
-                calculated_units = calculate_position_size(
-                    account_equity=account_equity, risk_percentage=risk_percentage_per_trade, atr=current_atr,
-                    pip_value_per_lot=pip_val_per_lot, lot_size=lot_sz,
-                    max_units_per_market=market_max_units, current_units_for_market=0, # No existing position for this symbol
-                    total_risk_percentage_limit=config['total_portfolio_risk_limit'],
-                    current_total_open_risk_percentage=current_total_risk_perc
+                # Generate entry signals (1 for long, -1 for short, 0 for no signal)
+                signal_series = generate_entry_signals(
+                    close=symbol_data_df['Close'],
+                    donchian_upper_entry=symbol_data_df[donchian_upper_entry_col],
+                    donchian_lower_entry=symbol_data_df[donchian_lower_entry_col],
+                    entry_period=entry_donchian_period_val
                 )
+                current_signal = signal_series.loc[timestamp] if timestamp in signal_series.index else 0
+                if pd.isna(current_signal): current_signal = 0
 
-                if calculated_units > 0:
-                    # Determine trade action and stop-loss price
-                    stop_loss_atr_multiplier = config['stop_loss_atr_multiplier']
-                    trade_action = "buy" if current_signal == 1 else "sell"
-                    stop_loss_price = current_close - (stop_loss_atr_multiplier * current_atr) if trade_action == "buy" \
-                                 else current_close + (stop_loss_atr_multiplier * current_atr)
+                if current_signal == 1 or current_signal == -1: # If there's an entry signal
+                    # Calculate position size based on risk parameters
+                    account_equity = portfolio_manager.get_total_equity(current_prices)
+                    risk_percentage_per_trade = config['risk_per_trade'] / 100 if config['risk_per_trade'] >= 1 else config['risk_per_trade']
+                    current_atr = symbol_data_df.loc[timestamp, atr_col]
+                    if pd.isna(current_atr) or current_atr <= 0: continue # ATR must be valid
 
-                    # Create and execute market order for entry
-                    entry_order_id = f"{timestamp.strftime('%Y%m%d%H%M%S')}_{symbol}_ENTRY"
-                    entry_market_order = Order(
-                        order_id=entry_order_id, symbol=symbol, order_type="market",
-                        trade_action=trade_action, quantity=calculated_units
+                    # Ensure symbol-specific config items are present
+                    if not (symbol in config['pip_point_value'] and \
+                            symbol in config['lot_size'] and \
+                            symbol in config['max_units_per_market']):
+                        print(f"Warning: Missing symbol-specific config (pip_point_value, lot_size, or max_units_per_market) for {symbol}. Skipping entry.")
+                        continue
+
+                    pip_val_per_unit = config['pip_point_value'][symbol]
+                    lot_sz = config['lot_size'][symbol]
+                    pip_val_per_lot = pip_val_per_unit * lot_sz
+                    market_max_units = config['max_units_per_market'][symbol]
+                    current_total_risk_perc = portfolio_manager.get_current_total_open_risk_percentage()
+
+                    calculated_units = calculate_position_size(
+                        account_equity=account_equity, risk_percentage=risk_percentage_per_trade, atr=current_atr,
+                        pip_value_per_lot=pip_val_per_lot, lot_size=lot_sz,
+                        max_units_per_market=market_max_units, current_units_for_market=0, # No existing position for this symbol
+                        total_risk_percentage_limit=config['total_portfolio_risk_limit'],
+                        current_total_open_risk_percentage=current_total_risk_perc
                     )
-                    portfolio_manager.record_order(entry_market_order)
-                    executed_entry_order = execute_order(
-                        order=entry_market_order, current_market_price=current_close,
-                        slippage_pips=config['slippage_pips'], commission_per_lot=config['commission_per_lot'],
-                        pip_point_value=pip_val_per_unit, lot_size=lot_sz,
-                        timestamp_filled_param=timestamp
-                    )
-                    if executed_entry_order.status == "filled":
-                        try:
-                            # Open position in portfolio manager
-                            portfolio_manager.open_position(
-                                symbol=symbol, trade_action=executed_entry_order.trade_action,
-                                quantity=executed_entry_order.quantity, entry_price=executed_entry_order.fill_price,
-                                entry_time=executed_entry_order.timestamp_filled or timestamp,
-                                stop_loss_price=stop_loss_price, order_id=executed_entry_order.order_id,
-                                commission=executed_entry_order.commission, slippage_value=executed_entry_order.slippage
-                            )
-                        except ValueError as e: # Catch errors from open_position (e.g. opposing trade)
-                            print(f"Error opening position for {symbol} at {timestamp}: {e}")
-        else: # emergency_stop_activated is True
-            pass # New entry signals are skipped
+
+                    if calculated_units > 0:
+                        # Determine trade action and stop-loss price
+                        stop_loss_atr_multiplier = config['stop_loss_atr_multiplier']
+                        trade_action = "buy" if current_signal == 1 else "sell"
+                        stop_loss_price = current_close - (stop_loss_atr_multiplier * current_atr) if trade_action == "buy" \
+                                     else current_close + (stop_loss_atr_multiplier * current_atr)
+
+                        # Create and execute market order for entry
+                        entry_order_id = f"{timestamp.strftime('%Y%m%d%H%M%S')}_{symbol}_ENTRY"
+                        entry_market_order = Order(
+                            order_id=entry_order_id, symbol=symbol, order_type="market",
+                            trade_action=trade_action, quantity=calculated_units
+                        )
+                        portfolio_manager.record_order(entry_market_order)
+                        executed_entry_order = execute_order(
+                            order=entry_market_order, current_market_price=current_close,
+                            slippage_pips=config['slippage_pips'], commission_per_lot=config['commission_per_lot'],
+                            pip_point_value=pip_val_per_unit, lot_size=lot_sz,
+                            timestamp_filled_param=timestamp
+                        )
+                        if executed_entry_order.status == "filled":
+                            try:
+                                # Open position in portfolio manager
+                                portfolio_manager.open_position(
+                                    symbol=symbol, trade_action=executed_entry_order.trade_action,
+                                    quantity=executed_entry_order.quantity, entry_price=executed_entry_order.fill_price,
+                                    entry_time=executed_entry_order.timestamp_filled or timestamp,
+                                    stop_loss_price=stop_loss_price, order_id=executed_entry_order.order_id,
+                                    commission=executed_entry_order.commission, slippage_value=executed_entry_order.slippage
+                                )
+                            except ValueError as e: # Catch errors from open_position (e.g. opposing trade)
+                                print(f"Error opening position for {symbol} at {timestamp}: {e}")
+        # else: # Optional: could add a log here if desired, e.g.
+            # if timestamp == sorted_timestamps[0]: # Log once per backtest if stopped
+            #     print(f"INFO: Emergency stop is active. Skipping new entry signal processing for all markets.")
+            # pass # No new entries are processed
 
     # --- 3. Return Results of the Backtest ---
     return {

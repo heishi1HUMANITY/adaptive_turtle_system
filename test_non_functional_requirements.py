@@ -74,8 +74,13 @@ class TestNonFunctionalRequirements(unittest.TestCase):
             json.dump(data, f, indent=2)
 
     def _create_dummy_historical_data(self, filepath, rows=20): # Changed default rows from 50 to 20
+        # Generate a sequence of valid daily timestamps starting from '2023-01-01'
+        # This will correctly advance months/years if rows is large.
+        start_date = pd.to_datetime('2023-01-01 00:00:00')
+        timestamps = pd.date_range(start=start_date, periods=rows, freq='D')
+
         data = {
-            'Timestamp': pd.to_datetime(['2023-01-{:02d} 00:00:00'.format(i+1) for i in range(rows)]),
+            'Timestamp': timestamps,
             'Open': [1.1000 + i*0.001 for i in range(rows)],
             'High': [1.1050 + i*0.001 for i in range(rows)],
             'Low': [1.0950 + i*0.001 for i in range(rows)],
@@ -218,7 +223,9 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         # Proper file content check for WARNING level is done below.
 
         # --- Test WARNING Log Level (File Content) ---
-        if os.path.exists(log_file_path): os.remove(log_file_path) # Clean up from DEBUG run
+        # Clean up the default log file path from setUp to prevent interference
+        default_log_file_to_clean = self.default_config_data["logging"]["log_file_path"]
+        if os.path.exists(default_log_file_to_clean): os.remove(default_log_file_to_clean) # Clean up default log before WARNING file test
 
         warning_config = self.default_config_data.copy()
         warning_config["logging"]["log_level"] = "WARNING"
@@ -301,7 +308,10 @@ class TestNonFunctionalRequirements(unittest.TestCase):
             except SystemExit:
                 pass
 
-        self.assertIn("Critical Error: An unexpected error occurred before logger initialization", self.mock_stdout.getvalue())
+        # Check for the specific ValueError message related to JSONDecodeError
+        # The exception string includes details like "Simulated JSON error: line 1 column 1 (char 0)"
+        # We'll check for the part of the message that is consistent.
+        self.assertIn("Critical Error: Value error before logger initialization: Simulated JSON error", self.mock_stdout.getvalue())
 
     @patch('main_backtest.config_loader.load_config')
     @patch('main_backtest.trading_logic.run_strategy')
@@ -358,9 +368,10 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         # main_backtest.py catches the EmptyDataError via general Exception handler and logs it.
         # The specific message "Error: Historical data file could not be loaded or is empty. Exiting."
         # is for when load_csv_data *returns* an empty df, not when it raises EmptyDataError.
-        # So we check for the exception log.
-        self.assertIn("main_backtest - An unexpected error occurred during the backtest process", log_content)
-        self.assertIn("Simulated EmptyDataError", log_content)
+        # When EmptyDataError is raised and caught by the ValueError block in main_backtest.py,
+        # the log message is "Error: Value error encountered: <exception_message>".
+        self.assertIn("main_backtest - Error: Value error encountered: Simulated EmptyDataError", log_content)
+        self.assertIn("Simulated EmptyDataError", log_content) # Ensure the specific error is still part of it
 
     @patch('main_backtest.config_loader.load_config')
     @patch('main_backtest.data_loader.load_csv_data')
@@ -372,8 +383,11 @@ class TestNonFunctionalRequirements(unittest.TestCase):
         mock_load_config.return_value = self.default_config_data
 
         # Setup mock_load_data to return a valid DataFrame
+        # Generate a sequence of valid daily timestamps
+        start_date = pd.to_datetime('2023-01-01')
+        timestamps = pd.date_range(start=start_date, periods=50, freq='D')
         dummy_df = pd.DataFrame({
-            'Timestamp': pd.to_datetime(['2023-01-{:02d}'.format(i+1) for i in range(50)]), # Match _create_dummy_historical_data
+            'Timestamp': timestamps,
             'Open': [1.1000 + i*0.001 for i in range(50)],
             'High': [1.1050 + i*0.001 for i in range(50)],
             'Low': [1.0950 + i*0.001 for i in range(50)],

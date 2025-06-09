@@ -33,11 +33,17 @@ def calculate_profit_factor(trade_log: List[Dict[str, Any]]) -> float:
     gross_profit = 0.0
     gross_loss = 0.0
 
-    if not trade_log:
+    # Filter for relevant trades: type 'exit' or 'reduction' and having 'realized_pnl'
+    relevant_trades = [
+        t for t in trade_log
+        if t.get('type') in ['exit', 'reduction'] and 'realized_pnl' in t
+    ]
+
+    if not relevant_trades: # If no relevant trades, profit factor is 0
         return 0.0
 
-    for trade in trade_log:
-        pnl = trade.get('realized_pnl', 0.0)
+    for trade in relevant_trades:
+        pnl = trade['realized_pnl'] # 'realized_pnl' is guaranteed by the filter
         if pnl > 0:
             gross_profit += pnl
         elif pnl < 0:

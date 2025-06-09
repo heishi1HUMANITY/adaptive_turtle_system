@@ -96,10 +96,13 @@ class TestPerformanceAnalyzer(unittest.TestCase):
 
     # 3. Test calculate_max_drawdown
     def test_calculate_max_drawdown(self):
-        # MDD: Peak 102000, Trough 100500. Abs MDD = 1500. Pct MDD = 1500/102000
+        # Equity: [100000.0, 101000.0, 100500.0, 102000.0, 101500.0]
+        # Drawdown 1: Peak 101000, Trough 100500. Abs DD = 500. Pct DD = 500/101000
+        # Drawdown 2: Peak 102000, Trough 101500. Abs DD = 500. Pct DD = 500/102000
+        # Max Abs DD = 500.0. Max Pct DD is 500/101000 (approx 0.00495)
         pct_mdd, abs_mdd = calculate_max_drawdown(self.dummy_equity_curve)
-        self.assertAlmostEqual(abs_mdd, 1500.0)
-        self.assertAlmostEqual(pct_mdd, 1500.0 / 102000.0)
+        self.assertAlmostEqual(abs_mdd, 500.0)
+        self.assertAlmostEqual(pct_mdd, 500.0 / 101000.0) # Corresponds to the highest percentage drawdown
 
         always_increasing = list(zip(self.timestamps, [100, 110, 120, 130]))
         self.assertEqual(calculate_max_drawdown(always_increasing), (0.0, 0.0))
@@ -148,7 +151,8 @@ class TestPerformanceAnalyzer(unittest.TestCase):
     # 5. Test calculate_trade_statistics
     def test_calculate_trade_statistics(self):
         stats = calculate_trade_statistics(self.dummy_trade_log)
-        self.assertEqual(stats['total_trades'], 3) # 1 entry ignored, 1 zero pnl is breakeven
+        # Relevant trades: 3 exits, 1 reduction. 1 entry is ignored. Total = 4.
+        self.assertEqual(stats['total_trades'], 4) # 1 entry ignored; exit/reduction trades (including breakeven) are counted
         self.assertEqual(stats['winning_trades'], 2) # 1000, 200
         self.assertEqual(stats['losing_trades'], 1) # -500
         self.assertEqual(stats['breakeven_trades'], 1) # 0 PnL exit

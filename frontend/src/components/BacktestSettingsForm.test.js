@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'; // Import act
 import '@testing-library/jest-dom'; // For extended matchers like .toBeDisabled()
 import BacktestSettingsForm from './BacktestSettingsForm';
 
@@ -42,37 +42,51 @@ describe('BacktestSettingsForm', () => {
   test('updates state on input change (e.g., initial capital)', () => {
     render(<BacktestSettingsForm />);
     const initialCapitalInput = screen.getByLabelText(/初期口座資金/i);
-    fireEvent.change(initialCapitalInput, { target: { value: '2000000' } });
+    act(() => {
+      fireEvent.change(initialCapitalInput, { target: { value: '2000000' } });
+    });
     expect(initialCapitalInput).toHaveValue(2000000);
   });
 
   test('displays validation error for invalid numeric input', () => {
     render(<BacktestSettingsForm />);
     const spreadInput = screen.getByLabelText(/スプレッド/i);
-    fireEvent.change(spreadInput, { target: { value: 'abc' } });
+    act(() => {
+      fireEvent.change(spreadInput, { target: { value: 'abc' } });
+    });
     expect(screen.getByText('スプレッド must be a valid number.')).toBeInTheDocument();
   });
 
   test('clears validation error when input becomes valid', () => {
     render(<BacktestSettingsForm />);
     const spreadInput = screen.getByLabelText(/スプレッド/i);
-    fireEvent.change(spreadInput, { target: { value: 'abc' } }); // Invalid
+    act(() => {
+      fireEvent.change(spreadInput, { target: { value: 'abc' } }); // Invalid
+    });
     expect(screen.getByText('スプレッド must be a valid number.')).toBeInTheDocument();
-    fireEvent.change(spreadInput, { target: { value: '1.5' } }); // Valid
+    act(() => {
+      fireEvent.change(spreadInput, { target: { value: '1.5' } }); // Valid
+    });
     expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument();
   });
 
   test('reset button clears inputs and errors', () => {
     render(<BacktestSettingsForm />);
     const initialCapitalInput = screen.getByLabelText(/初期口座資金/i);
-    fireEvent.change(initialCapitalInput, { target: { value: 'abc' } }); // Cause an error
+    act(() => {
+      fireEvent.change(initialCapitalInput, { target: { value: 'abc' } }); // Cause an error
+    });
     expect(screen.getByText('初期口座資金 must be a valid number.')).toBeInTheDocument();
 
-    fireEvent.change(initialCapitalInput, { target: { value: '1200000' } }); // Change value
+    act(() => {
+      fireEvent.change(initialCapitalInput, { target: { value: '1200000' } }); // Change value
+    });
     expect(initialCapitalInput).toHaveValue(1200000);
 
     const resetButton = screen.getByRole('button', { name: /パラメータをデフォルト値に戻す/i });
-    fireEvent.click(resetButton);
+    act(() => {
+      fireEvent.click(resetButton);
+    });
 
     expect(initialCapitalInput).toHaveValue(1000000); // Back to default
     expect(screen.queryByText('初期口座資金 must be a valid number.')).not.toBeInTheDocument(); // Error cleared
@@ -84,17 +98,25 @@ describe('BacktestSettingsForm', () => {
 
     // Test case 1: Validation fails
     const spreadInput = screen.getByLabelText(/スプレッド/i);
-    fireEvent.change(spreadInput, { target: { value: '' } }); // Invalid: empty
-    fireEvent.click(executeButton);
+    act(() => {
+      fireEvent.change(spreadInput, { target: { value: '' } }); // Invalid: empty
+    });
+    act(() => {
+      fireEvent.click(executeButton);
+    });
     expect(screen.getByText('スプレッド must be a valid number.')).toBeInTheDocument();
     expect(executeButton).not.toBeDisabled();
     expect(executeButton).toHaveTextContent('バックテストを実行する');
 
     // Test case 2: Validation passes
-    fireEvent.change(spreadInput, { target: { value: '1.5' } }); // Valid
+    act(() => {
+      fireEvent.change(spreadInput, { target: { value: '1.5' } }); // Valid
+    });
     expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument();
 
-    fireEvent.click(executeButton);
+    act(() => {
+      fireEvent.click(executeButton);
+    });
 
     // Check for executing state
     expect(executeButton).toBeDisabled();
@@ -118,8 +140,9 @@ describe('BacktestSettingsForm', () => {
     // fireEvent.change(screen.getByTestId('start-date'), { target: { value: '2023-01-01' } });
     // fireEvent.change(screen.getByTestId('end-date'), { target: { value: '2023-12-31' } });
 
-
-    fireEvent.click(executeButton);
+    act(() => {
+      fireEvent.click(executeButton);
+    });
 
     expect(executeButton).toBeDisabled();
     // Check a few inputs

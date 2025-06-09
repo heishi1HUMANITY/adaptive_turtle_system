@@ -42,5 +42,11 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "jest": {
+    "transformIgnorePatterns": [
+      "/node_modules/(?!chartjs-adapter-date-fns|react-chartjs-2|chart.js|@kurkle/color)/",
+      "^.+\\.module\\.(css|sass|scss)$"
+    ]
   }
 }

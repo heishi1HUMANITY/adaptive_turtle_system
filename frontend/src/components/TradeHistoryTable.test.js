@@ -3,14 +3,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import TradeHistoryTable from './TradeHistoryTable';
 
-// Mocking for CSV export
-global.URL.createObjectURL = jest.fn(() => 'mocked_url');
-global.Blob = jest.fn(function(content, options) {
-  this.content = content;
-  this.options = options;
-  return this; // The constructor returns itself
-});
+import { act } from '@testing-library/react'; // Using act from RTL
 
+// It's generally better to set up and tear down mocks for each test or context (describe block)
+// to avoid interference between tests.
 
 describe('TradeHistoryTable', () => {
   const dummyTradeHistoryData = [
@@ -35,8 +31,9 @@ describe('TradeHistoryTable', () => {
 
   it('renders table with data', () => {
     render(<TradeHistoryTable tradeHistoryData={dummyTradeHistoryData} />);
-    expect(screen.getByText('AAPL')).toBeInTheDocument(); // Check for a known symbol
-    expect(screen.getByText('MSFT')).toBeInTheDocument();
+    // Use getAllByText and check the length or specific elements
+    expect(screen.getAllByText('AAPL').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('MSFT')[0]).toBeInTheDocument(); // Check for one MSFT
     expect(screen.getAllByRole('row').length).toBeGreaterThan(1); // Header + data rows (max 10 per page)
   });
 
@@ -44,20 +41,23 @@ describe('TradeHistoryTable', () => {
     render(<TradeHistoryTable tradeHistoryData={dummyTradeHistoryData} />);
     const searchInput = screen.getByPlaceholderText('Search...');
     fireEvent.change(searchInput, { target: { value: 'MSFT' } });
-    expect(screen.getByText('MSFT')).toBeInTheDocument();
+    expect(screen.getAllByText('MSFT')[0]).toBeInTheDocument();
     expect(screen.queryByText('AAPL')).not.toBeInTheDocument();
   });
 
   it('paginates data', () => {
     render(<TradeHistoryTable tradeHistoryData={dummyTradeHistoryData} />); // 11 items, 10 per page
-    expect(screen.getByText('AAPL')).toBeInTheDocument(); // First page
+    // Check that first page items are present
+    expect(screen.getAllByText('AAPL')[0]).toBeInTheDocument();
     expect(screen.queryByText('AMZN')).not.toBeInTheDocument(); // AMZN is the 11th item, so on page 2
 
     const nextPageButton = screen.getByText('Next');
     fireEvent.click(nextPageButton);
 
-    expect(screen.queryByText('AAPL')).not.toBeInTheDocument(); // First item no longer visible
-    expect(screen.getByText('AMZN')).toBeInTheDocument(); // 11th item now visible
+    // After clicking next, AAPL should not be there (assuming it was only on page 1)
+    // and AMZN should be there.
+    expect(screen.queryByText('AAPL')).not.toBeInTheDocument();
+    expect(screen.getAllByText('AMZN')[0]).toBeInTheDocument();
     expect(screen.getByText(/Page 2 of 2/i)).toBeInTheDocument();
   });
 
@@ -66,28 +66,23 @@ describe('TradeHistoryTable', () => {
     // Check initial order (e.g., by ID or first symbol)
     let rows = screen.getAllByRole('row');
     // queryByText can be useful if the text might not be there
-    expect(rows[1].querySelector('td:nth-child(4)')).toHaveTextContent('AAPL');
+    // Ensure we are selecting a cell within the data rows, not header.
+    // This checks the symbol in the first cell of the first data row.
+    expect(screen.getAllByRole('row')[1].getAllByRole('cell')[3]).toHaveTextContent('AAPL');
 
 
     const symbolHeader = screen.getByText('Symbol'); // Case sensitive as per component
     fireEvent.click(symbolHeader); // Sort by symbol ascending
 
-    rows = screen.getAllByRole('row');
-    // This depends on the actual sorting logic and data. Let's assume AAPL is still first or near first.
-    // A more robust test would check the actual order of multiple elements if predictable.
-    // For now, we confirm the header click doesn't crash and potentially re-renders.
-    // A better assertion would be to check the order of 'AAPL', 'AMZN', 'GOOG', etc.
-
-    // Example: Check if the first data row's symbol cell contains expected text after sort
-    // This requires knowing your data and how it sorts.
-    // For dummyTradeHistoryData, 'AAPL' is the first alphabetically.
-    expect(rows[1].querySelector('td:nth-child(4)')).toHaveTextContent('AAPL');
+    // After sorting, re-fetch rows and check content.
+    // This assertion assumes 'AAPL' is alphabetically first among the symbols.
+    expect(screen.getAllByRole('row')[1].getAllByRole('cell')[3]).toHaveTextContent('AAPL');
 
     fireEvent.click(symbolHeader); // Sort by symbol descending
-    rows = screen.getAllByRole('row');
-    // Now, TSLA or NVDA or MSFT might be first depending on full dataset.
-    // For dummyTradeHistoryData, 'TSLA' would be last alphabetically.
-    expect(rows[1].querySelector('td:nth-child(4)')).toHaveTextContent('TSLA');
+    // This assertion assumes 'TSLA' is alphabetically last among the symbols on the first page.
+    // If pagination changes which items are on the first page post-sort, this might need adjustment.
+    // For the given dataset and itemsPerPage=10, TSLA will be on the first page.
+    expect(screen.getAllByRole('row')[1].getAllByRole('cell')[3]).toHaveTextContent('TSLA');
   });
 
   it('has an export to CSV button', () => {
@@ -95,59 +90,69 @@ describe('TradeHistoryTable', () => {
     expect(screen.getByText('Export to CSV')).toBeInTheDocument();
   });
 
-  it('attempts to download a CSV when export button is clicked', () => {
-    const mockLink = {
-      href: '',
-      download: '',
-      style: { visibility: '' },
-      setAttribute: jest.fn(),
-      click: jest.fn(),
-    };
-    jest.spyOn(document, 'createElement').mockReturnValue(mockLink);
-    jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
-    jest.spyOn(document.body, 'removeChild').mockImplementation(() => {});
+  describe('CSV Export Functionality', () => {
+    let mockLink;
+    let createElementSpy;
+    let appendChildSpy;
+    let removeChildSpy;
+    let createObjectURLSpy;
+    let blobSpy;
 
+    beforeEach(() => {
+      // Setup mocks before each test in this describe block
+      mockLink = {
+        href: '',
+        download: '',
+        style: { visibility: '' }, // Ensure style property exists
+        setAttribute: jest.fn(),
+        click: jest.fn(),
+      };
+      createElementSpy = jest.spyOn(document, 'createElement').mockReturnValue(mockLink);
+      appendChildSpy = jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
+      removeChildSpy = jest.spyOn(document.body, 'removeChild').mockImplementation(() => {});
+      createObjectURLSpy = jest.spyOn(URL, 'createObjectURL').mockReturnValue('mocked_url_per_test');
+      // Mock Blob constructor
+      blobSpy = jest.spyOn(global, 'Blob').mockImplementation((content, options) => ({
+        content: content,
+        options: options,
+        // you can add more blob properties if your code uses them e.g. size, type
+      }));
+    });
 
-    render(<TradeHistoryTable tradeHistoryData={dummyTradeHistoryData} />);
-    const exportButton = screen.getByText('Export to CSV');
-    fireEvent.click(exportButton);
+    afterEach(() => {
+      // Restore all mocks after each test
+      jest.restoreAllMocks();
+    });
 
-    expect(global.Blob).toHaveBeenCalled();
-    expect(global.URL.createObjectURL).toHaveBeenCalled();
-    expect(mockLink.setAttribute).toHaveBeenCalledWith('href', 'mocked_url');
-    expect(mockLink.setAttribute).toHaveBeenCalledWith('download', 'trade_history.csv');
-    expect(mockLink.click).toHaveBeenCalled();
-    expect(document.body.appendChild).toHaveBeenCalledWith(mockLink);
-    expect(document.body.removeChild).toHaveBeenCalledWith(mockLink);
+    it('attempts to download a CSV when export button is clicked with data', () => {
+      render(<TradeHistoryTable tradeHistoryData={dummyTradeHistoryData} />);
+      const exportButton = screen.getByText('Export to CSV');
 
-    // Restore mocks
-    jest.restoreAllMocks();
+      act(() => {
+        fireEvent.click(exportButton);
+      });
+
+      expect(blobSpy).toHaveBeenCalled();
+      expect(createObjectURLSpy).toHaveBeenCalled();
+      expect(createElementSpy).toHaveBeenCalledWith('a');
+      expect(mockLink.setAttribute).toHaveBeenCalledWith('href', 'mocked_url_per_test');
+      expect(mockLink.setAttribute).toHaveBeenCalledWith('download', 'trade_history.csv');
+      expect(mockLink.click).toHaveBeenCalled();
+      expect(appendChildSpy).toHaveBeenCalledWith(mockLink);
+      expect(removeChildSpy).toHaveBeenCalledWith(mockLink);
+    });
+
+    it('handles empty data for CSV export gracefully (no Blob creation or download)', () => {
+      render(<TradeHistoryTable tradeHistoryData={[]} />); // Empty data
+      const exportButton = screen.getByText('Export to CSV');
+
+      act(() => {
+        fireEvent.click(exportButton);
+      });
+
+      expect(blobSpy).not.toHaveBeenCalled();
+      expect(createObjectURLSpy).not.toHaveBeenCalled();
+      expect(mockLink.click).not.toHaveBeenCalled();
+    });
   });
-
-  it('handles empty data for CSV export gracefully', () => {
-    const mockLink = {
-      href: '',
-      download: '',
-      style: { visibility: '' },
-      setAttribute: jest.fn(),
-      click: jest.fn(),
-    };
-    jest.spyOn(document, 'createElement').mockReturnValue(mockLink);
-    jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
-    jest.spyOn(document.body, 'removeChild').mockImplementation(() => {});
-    const originalBlob = global.Blob;
-    global.Blob = jest.fn();
-
-
-    render(<TradeHistoryTable tradeHistoryData={[]} />);
-    const exportButton = screen.getByText('Export to CSV');
-    fireEvent.click(exportButton);
-
-    expect(global.Blob).not.toHaveBeenCalled(); // Should not attempt to create Blob if no data
-    expect(mockLink.click).not.toHaveBeenCalled();
-
-    global.Blob = originalBlob; // Restore
-    jest.restoreAllMocks();
-  });
-
 });

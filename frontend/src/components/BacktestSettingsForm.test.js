@@ -204,7 +204,7 @@ describe('BacktestSettingsForm', () => {
 
    test('all inputs are disabled during execution', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
+    const initialExecuteButton = screen.getByRole('button', { name: /バックテストを実行する/i });
 
     // Ensure form is valid before clicking execute
     // (Assuming default values are valid)
@@ -215,21 +215,27 @@ describe('BacktestSettingsForm', () => {
       }), 100)) // Short delay to allow checking disabled state
     );
 
-    await act(async () => {
-      fireEvent.click(executeButton);
-      // Immediately after click, check disabled state
-      expect(executeButton).toBeDisabled();
-      expect(screen.getByLabelText(/初期口座資金/i)).toBeDisabled();
-      expect(screen.getByLabelText(/スプレッド/i)).toBeDisabled();
-      expect(screen.getByRole('button', { name: /パラメータをデフォルト値に戻す/i })).toBeDisabled();
-      expect(screen.getByTestId('file-upload')).toBeDisabled();
-      expect(screen.getByTestId('start-date')).toBeDisabled();
-      expect(screen.getByTestId('end-date')).toBeDisabled();
-    });
+    // fireEvent.click is already wrapped in act by RTL for synchronous updates
+    fireEvent.click(initialExecuteButton);
 
-    // After fetch completes and component processes this.
+    // After the click, isExecuting should be true.
+    // Wait for the button text to change and for it to be disabled.
+    const executingButton = await screen.findByRole('button', { name: /実行中.../i });
+    expect(executingButton).toBeDisabled();
+
+    // Assert that other inputs are also disabled
+    expect(screen.getByLabelText(/初期口座資金/i)).toBeDisabled();
+    expect(screen.getByLabelText(/スプレッド/i)).toBeDisabled();
+    expect(screen.getByRole('button', { name: /パラメータをデフォルト値に戻す/i })).toBeDisabled();
+    expect(screen.getByTestId('file-upload')).toBeDisabled();
+    expect(screen.getByTestId('start-date')).toBeDisabled();
+    expect(screen.getByTestId('end-date')).toBeDisabled();
+
+    // After fetch completes and component processes this (setIsExecuting(false) in finally).
     await waitFor(() => {
-      expect(executeButton).not.toBeDisabled();
+      // Button text should revert and it should be enabled
+      const finalExecuteButton = screen.getByRole('button', { name: /バックテストを実行する/i });
+      expect(finalExecuteButton).not.toBeDisabled();
       expect(mockNavigate).toHaveBeenCalledWith('/loading/test-job-id-disabled', {
         state: { jobId: 'test-job-id-disabled' },
       });

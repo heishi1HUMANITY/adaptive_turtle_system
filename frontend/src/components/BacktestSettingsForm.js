@@ -121,7 +121,7 @@ const BacktestSettingsForm = () => {
     .then(data => {
       if (data.job_id) {
         console.log('Backtest job started successfully. Job ID:', data.job_id);
-        navigate(`/loading/${data.job_id}`);
+        navigate(`/loading/${data.job_id}`, { state: { jobId: data.job_id } });
       } else {
         // This case should ideally be caught by !response.ok, but as a fallback
         console.error('Failed to start backtest job: No job_id received', data);

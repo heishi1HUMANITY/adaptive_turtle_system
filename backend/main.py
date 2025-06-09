@@ -1,11 +1,12 @@
 import sys
 import os
 import uuid
+import asyncio # Ensure asyncio is imported
 import pandas as pd # Added import
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -15,6 +16,10 @@ import trading_logic
 import performance_analyzer
 import data_loader
 # config_loader might not be directly used if API passes all config
+
+# Define Data Directory relative to this file's location (backend/main.py)
+# It should point to the 'data' folder in the project root
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
 
 # Pydantic Models
 class BacktestSettings(BaseModel):
@@ -65,6 +70,24 @@ class BacktestResultsResponse(BaseModel):
     equity_curve: Optional[List[EquityDataPoint]] = None
     trade_log: Optional[List[TradeLogEntry]] = None
     message: Optional[str] = None
+
+# Pydantic Models for Data Collection API
+class DataCollectionRequest(BaseModel): # Ensure this model is defined or imported
+    symbol: str
+    startYear: int
+    startMonth: int
+    endYear: int
+    endMonth: int
+    apiKey: Optional[str] = None # Assuming API key might be optional or handled differently
+
+class FileInfo(BaseModel):
+    name: str
+    size: int # size in bytes
+    created_at: datetime # creation timestamp
+
+class FileListResponse(BaseModel):
+    files: List[FileInfo]
+    total_files: int
 
 # Job Store
 job_store: Dict[str, Dict[str, Any]] = {}
@@ -147,6 +170,22 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
             "trade_log": None
         })
 
+async def run_datacollection_task(job_id: str, request_params: dict):
+    """
+    Background task to simulate data collection.
+    """
+    try:
+        job_store[job_id]["status"] = "running"
+        # Simulate data collection work
+        await asyncio.sleep(5) # Simulate I/O bound operation
+        job_store[job_id]["status"] = "completed"
+        job_store[job_id]["message"] = "Data collection finished."
+    except Exception as e:
+        job_store[job_id].update({
+            "status": "failed",
+            "message": str(e)
+        })
+
 app = FastAPI()
 
 # Configure CORS
@@ -180,6 +219,18 @@ async def create_backtest_job(settings: BacktestSettings, background_tasks: Back
         "message": "Job initiated." # Optional: a more descriptive initial message
     }
     background_tasks.add_task(run_backtest_task, job_id, settings.model_dump())
+    return JobCreationResponse(job_id=job_id)
+
+@app.post("/api/data/collect", response_model=JobCreationResponse, status_code=202)
+async def start_data_collection(request: DataCollectionRequest, background_tasks: BackgroundTasks):
+    job_id = str(uuid.uuid4())
+    job_store[job_id] = {
+        "status": "pending",
+        "type": "data_collection", # Differentiate from backtest jobs
+        "parameters": request.model_dump(),
+        "message": "Data collection job initiated."
+    }
+    background_tasks.add_task(run_datacollection_task, job_id, request.model_dump())
     return JobCreationResponse(job_id=job_id)
 
 
@@ -243,3 +294,102 @@ async def get_job_results(job_id: str):
     else:
         # Should not happen with current states, but good for robustness
         raise HTTPException(status_code=500, detail=f"Unknown job status: {status}")
+
+
+@app.websocket("/api/data/stream_log/{job_id}")
+async def stream_log(websocket: WebSocket, job_id: str):
+    await websocket.accept()
+
+    job_info = job_store.get(job_id)
+    if not job_info or job_info.get("type") != "data_collection":
+        await websocket.send_text(f"ERROR: Job ID {job_id} not found or is not a data collection job.")
+        await websocket.close(code=1008) # Policy Violation
+        return
+
+    await websocket.send_text(f"Streaming logs for data collection job {job_id}...")
+
+    try:
+        # Loop to send log messages based on job status
+        for i in range(10): # Simulate sending 10 log lines as per example
+            current_job_info = job_store.get(job_id) # Fetch fresh status
+            if not current_job_info:
+                await websocket.send_text(f"ERROR: Job {job_id} disappeared unexpectedly.")
+                break
+
+            status = current_job_info["status"]
+
+            if status == "running":
+                await websocket.send_text(f"LOG: Line {i+1} for job {job_id} (Status: {status})")
+                await asyncio.sleep(1)  # Wait 1 second
+            elif status == "completed":
+                await websocket.send_text(f"INFO: Job {job_id} completed. {current_job_info.get('message', '')}")
+                break
+            elif status == "failed":
+                await websocket.send_text(f"ERROR: Job {job_id} failed. {current_job_info.get('message', '')}")
+                break
+            elif status == "pending":
+                 await websocket.send_text(f"INFO: Job {job_id} is pending. Waiting for it to start...")
+                 await asyncio.sleep(1) # Wait for job to start
+            else: # unknown status or job disappeared
+                await websocket.send_text(f"INFO: Job {job_id} status is {status}. Ending log stream.")
+                break
+
+        # After loop, or if job completes/fails during loop
+        final_job_info = job_store.get(job_id, {})
+        final_status = final_job_info.get("status", "unknown")
+        final_message = final_job_info.get("message", "")
+        await websocket.send_text(f"INFO: Log streaming ended for job {job_id}. Final status: {final_status}. Message: {final_message}")
+
+    except WebSocketDisconnect:
+        print(f"Client disconnected from job {job_id} log stream.")  # Server-side log
+    except Exception as e:
+        error_message = f"ERROR: An error occurred during log streaming: {str(e)}"
+        print(f"Error in log streaming for job {job_id}: {e}")  # Server-side log
+        try:
+            await websocket.send_text(error_message)
+        except Exception:  # Handle cases where sending error also fails
+            pass  # e.g., connection already closed
+    finally:
+        # FastAPI handles closing the WebSocket connection automatically when the function exits
+        # or an unhandled exception occurs. Explicit websocket.close() can be used if specific
+        # close codes or reasons are needed before this point.
+        print(f"Closing WebSocket connection for job {job_id}")
+
+
+@app.get("/api/data/files", response_model=FileListResponse)
+async def list_data_files():
+    found_files = []
+    if not os.path.exists(DATA_DIR) or not os.path.isdir(DATA_DIR):
+        # Log this situation server-side, though client gets an empty list as per requirement
+        print(f"Data directory {DATA_DIR} not found or is not a directory.")
+        return FileListResponse(files=[], total_files=0)
+
+    try:
+        for f_name in os.listdir(DATA_DIR):
+            file_path = os.path.join(DATA_DIR, f_name)
+            # Check if it's a file and ends with .csv (case-insensitive)
+            if os.path.isfile(file_path) and f_name.lower().endswith('.csv'):
+                try:
+                    size = os.path.getsize(file_path)
+                    created_at_timestamp = os.path.getctime(file_path)
+                    created_at_datetime = datetime.fromtimestamp(created_at_timestamp)
+
+                    file_info = FileInfo(
+                        name=f_name,
+                        size=size,
+                        created_at=created_at_datetime
+                    )
+                    found_files.append(file_info)
+                except OSError as e:
+                    # Log error for specific file, but continue with others
+                    print(f"Error processing file {file_path}: {e}")
+
+        return FileListResponse(files=found_files, total_files=len(found_files))
+
+    except OSError as e:
+        # Log error for directory listing issue
+        print(f"Error listing files in directory {DATA_DIR}: {e}")
+        # As per requirement, could return empty list or raise HTTP 500
+        # Returning empty list for now to prevent full endpoint failure on partial read issues.
+        # For a more robust solution, an HTTP 500 might be better if any OS error occurs.
+        raise HTTPException(status_code=500, detail=f"Server error accessing data files: {str(e)}")

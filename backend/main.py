@@ -97,13 +97,12 @@ class FileListResponse(BaseModel):
 job_store: Dict[str, Dict[str, Any]] = {}
 
 
-async def run_backtest_task(job_id: str, settings_dict: dict):
+def _blocking_backtest_execution(job_id: str, settings_dict: dict):
     """
-    Background task to run the backtest, calculate KPIs, and store results.
+    Synchronous function to run the backtest, calculate KPIs, and store results.
+    This function is intended to be run in a separate thread.
     """
     try:
-        job_store[job_id]["status"] = "running"
-
         # Configuration Preparation
         # settings_dict itself is used as config_dict_for_run as it contains all necessary fields
         config_dict_for_run = settings_dict.copy() # Use a copy to avoid modifying the original settings
@@ -176,6 +175,26 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
             "equity_curve": None,
             "trade_log": None
         })
+
+
+async def run_backtest_task(job_id: str, settings_dict: dict):
+    """
+    Background task to run the backtest in a separate thread, calculate KPIs, and store results.
+    """
+    job_store[job_id]["status"] = "running"
+    try:
+        await asyncio.to_thread(_blocking_backtest_execution, job_id, settings_dict)
+    except Exception as e: # Handle exceptions from asyncio.to_thread itself, if any
+        error_str = str(e)
+        job_store[job_id].update({
+            "status": "failed",
+            "error_message": f"Failed to execute backtest task in thread: {error_str}",
+            "message": f"Backtest failed due to threading error: {error_str}",
+            "kpis": None,
+            "equity_curve": None,
+            "trade_log": None
+        })
+
 
 def _blocking_data_collection_simulation(request_params: dict) -> Dict[str, Any]:
     """

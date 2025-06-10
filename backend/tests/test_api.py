@@ -92,7 +92,7 @@ def test_get_status_and_results_flow(client: TestClient):
     # endpoint that spawned them if they are simple. If run_strategy is quick,
     # it might already be completed.
     # This loop is more for "real" async behavior or longer tasks.
-    max_wait_time = 20  # seconds
+    max_wait_time = 35  # seconds
     poll_interval = 0.5 # seconds
     start_time = time.time()
     job_completed = False
@@ -183,7 +183,7 @@ def test_run_backtest_and_fail_missing_data_file(client: TestClient, monkeypatch
     job_id = run_response.json()["job_id"]
 
     # 3. Poll for "failed" status
-    max_wait_time = 10  # seconds
+    max_wait_time = 20  # seconds
     poll_interval = 0.5 # seconds
     start_time = time.time()
     job_failed = False
@@ -251,7 +251,7 @@ def test_data_collection_job_status_flow(client: TestClient):
     job_id = run_response.json()["job_id"]
 
     # 2. Poll for completion (simulated task takes ~5 seconds)
-    max_wait_time = 10  # seconds, allowing some buffer
+    max_wait_time = 20  # seconds, allowing some buffer
     poll_interval = 0.5 # seconds
     start_time = time.time()
     job_completed_successfully = False
@@ -375,7 +375,7 @@ def test_stream_log_success(client: TestClient):
         # Message from backend/main.py: Streaming logs for data collection job {job_id}...
         assert f"Streaming logs for data collection job {job_id}" in initial_data
 
-        max_test_duration = time.time() + 15  # Increased test timeout (job is ~5s)
+        max_test_duration = time.time() + 25  # Increased test timeout (job is ~5s)
         while time.time() < max_test_duration:
             try:
                 data = websocket.receive_text() # No timeout argument

@@ -3,6 +3,7 @@ import os
 import uuid
 import asyncio # Ensure asyncio is imported
 import time # Import time module
+import threading # Add threading import
 import pandas as pd # Added import
 from datetime import datetime
 from typing import List, Dict, Optional, Any
@@ -188,10 +189,15 @@ def _blocking_data_collection_simulation(job_id: str, request_params: dict, job_
 
 def manage_blocking_data_collection(job_id: str, request_params: dict):
     """
-    Manages the blocking data collection simulation.
+    Manages the blocking data collection simulation using a separate thread.
     """
-    # job_store is a global variable, so it should be accessible.
-    _blocking_data_collection_simulation(job_id, request_params, job_store)
+    # job_store is global, _blocking_data_collection_simulation will access it.
+    thread = threading.Thread(
+        target=_blocking_data_collection_simulation,
+        args=(job_id, request_params, job_store), # Pass job_store here
+        daemon=True
+    )
+    thread.start()
 
 app = FastAPI()
 

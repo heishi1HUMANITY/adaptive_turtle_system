@@ -118,14 +118,16 @@ function DataManagementPage() {
         }
 
         const collectionParams = {
-            api_key: storedApiKey,
-            currency_pair: currencyPair,
-            timeframe: 'M1', // Assuming M1 is fixed as per UI
-            start_date: `${startYear}-${String(startMonth).padStart(2, '0')}-01`,
-            end_date: `${endYear}-${String(endMonth).padStart(2, '0')}-01`,
+            apiKey: storedApiKey, // Renamed from api_key
+            symbol: currencyPair, // Renamed from currency_pair
+            startYear: startYear,
+            startMonth: startMonth,
+            endYear: endYear,
+            endMonth: endMonth,
+            // timeframe, start_date, and end_date are removed
         };
 
-        setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集リクエスト: ${JSON.stringify(Omit(collectionParams, ['api_key']))}`]);
+        setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集リクエスト: ${JSON.stringify(Omit(collectionParams, ['apiKey']))}`]);
 
         try {
             const response = await fetch('http://localhost:8000/api/data/collect', {

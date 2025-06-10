@@ -162,13 +162,16 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
             "kpis": kpi_results_dict,
             "equity_curve": backtest_engine_results.get("equity_curve"), # Stored as list of tuples
             "trade_log": backtest_engine_results.get("trade_log"),
-            "error_message": None
+            "error_message": None,
+            "message": "Backtest completed successfully." # Added success message
         })
 
     except Exception as e:
+        error_str = str(e)
         job_store[job_id].update({
             "status": "failed",
-            "error_message": str(e),
+            "error_message": error_str,
+            "message": f"Backtest failed: {error_str}", # Added failure message
             "kpis": None,
             "equity_curve": None,
             "trade_log": None

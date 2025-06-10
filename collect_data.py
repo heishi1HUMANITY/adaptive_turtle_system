@@ -9,23 +9,24 @@ import json # Added import
 
 def fetch_forex_data(year, month, symbol, api_key):
     """
-    Fetches historical forex data from Alpha Vantage using FX_INTRADAY_EXTENDED.
-    Symbol should be in format like 'USDJPY'.
+    Fetches historical intraday data from Alpha Vantage using TIME_SERIES_INTRADAY.
+    Symbol should be in format like 'USDJPY' (though this endpoint is typically for stocks).
+    Month is specified as YYYY-MM.
     On error, prints to stderr and returns None.
     """
-    if len(symbol) < 4: # Basic validation for symbol format
-        print(f"  -> Invalid symbol format: {symbol}. Expected format like USDJPY.", file=sys.stderr)
-        return None
-    from_currency = symbol[:3]
-    to_currency = symbol[3:]
+    # Symbol validation can be kept if it's still relevant for the expected format.
+    # if len(symbol) < 1: # Example: Basic check for non-empty symbol
+    #     print(f"  -> Invalid symbol: {symbol}. Symbol cannot be empty.", file=sys.stderr)
+    #     return None
+
+    year_month_str = f"{year}-{str(month).zfill(2)}"
 
     url = (f'https://www.alphavantage.co/query?'
-           f'function=FX_INTRADAY&from_symbol={from_currency}&to_symbol={to_currency}'
-           f'&interval=1min&outputsize=full&apikey={api_key}')
+           f'function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=1min'
+           f'&month={year_month_str}&outputsize=full&apikey={api_key}')
 
     # This informational message can go to stdout as it's part of normal operation logging.
-    # Year and month are kept for logging context, even if not used in API call directly.
-    print(f"Fetching intraday data for {symbol} (target period: {year}-{month:02d}) using API key {api_key[:5]}... (outputsize=full)")
+    print(f"Fetching TIME_SERIES_INTRADAY data for {symbol} (month: {year_month_str}) using API key {api_key[:5]}...")
 
     try:
         response = requests.get(url)

@@ -68,7 +68,7 @@ function DataManagementPage() {
         // Keep existing log message for starting update
         setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ファイルリストを更新中...`]);
         try {
-            const response = await fetch('/api/data/files');
+            const response = await fetch('http://localhost:8000/api/data/files');
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }

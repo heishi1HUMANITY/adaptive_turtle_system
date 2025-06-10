@@ -518,42 +518,50 @@ async def stream_log(websocket: WebSocket, job_id: str):
         await websocket.close(code=1008) # Policy Violation
         return
 
-    await websocket.send_text(f"Streaming logs for data collection job {job_id}...")
+    await websocket.send_text(f"INFO: Streaming logs for data collection job {job_id}...")
+
+    last_sent_status = None
+    last_sent_message = "" # Use empty string to ensure first message is always sent
+    last_detailed_log_length = 0
 
     try:
-        # Loop to send log messages based on job status
-        for i in range(10): # Simulate sending 10 log lines as per example
-            current_job_info = job_store.get(job_id) # Fetch fresh status
+        while True:
+            current_job_info = job_store.get(job_id)
+
             if not current_job_info:
-                await websocket.send_text(f"ERROR: Job {job_id} disappeared unexpectedly.")
-                break
+                await websocket.send_text(f"ERROR: Job {job_id} data disappeared from store.")
+                break # Exit loop
 
-            status = current_job_info["status"]
+            current_status = current_job_info.get("status", "unknown")
+            current_message = current_job_info.get("message", "")
+            detailed_log_entries = current_job_info.get("detailed_log", []) # This is a list
 
-            if status == "running":
-                await websocket.send_text(f"LOG: Line {i+1} for job {job_id} (Status: {status})")
-                await asyncio.sleep(0.05)  # Wait 0.05 seconds
-            elif status == "completed":
-                await websocket.send_text(f"INFO: Job {job_id} completed. {current_job_info.get('message', '')}")
-                break
-            elif status == "failed":
-                await websocket.send_text(f"ERROR: Job {job_id} failed. {current_job_info.get('message', '')}")
-                break
-            elif status == "pending":
-                 await websocket.send_text(f"INFO: Job {job_id} is pending. Waiting for it to start...")
-                 await asyncio.sleep(0.05) # Wait for job to start
-            else: # unknown status or job disappeared
-                await websocket.send_text(f"INFO: Job {job_id} status is {status}. Ending log stream.")
-                break
+            # Send status if it changed
+            if current_status != last_sent_status:
+                await websocket.send_text(f"STATUS: {current_status}")
+                last_sent_status = current_status
 
-        # After loop, or if job completes/fails during loop
-        final_job_info = job_store.get(job_id, {})
-        final_status = final_job_info.get("status", "unknown")
-        final_message = final_job_info.get("message", "")
-        await websocket.send_text(f"INFO: Log streaming ended for job {job_id}. Final status: {final_status}. Message: {final_message}")
+            # Send main message if it changed
+            if current_message != last_sent_message:
+                await websocket.send_text(f"MESSAGE: {current_message}")
+                last_sent_message = current_message
+
+            # Send new detailed_log entries
+            num_detailed_logs = len(detailed_log_entries)
+            if num_detailed_logs > last_detailed_log_length:
+                for i in range(last_detailed_log_length, num_detailed_logs):
+                    await websocket.send_text(f"LOG: {detailed_log_entries[i]}")
+                last_detailed_log_length = num_detailed_logs
+
+            # Check for job completion or failure to terminate the stream
+            if current_status == "completed" or current_status == "failed":
+                await websocket.send_text(f"STREAM_END: Job {current_status}.")
+                break # Exit loop
+
+            await asyncio.sleep(1) # Poll every 1 second
 
     except WebSocketDisconnect:
-        print(f"Client disconnected from job {job_id} log stream.")  # Server-side log
+        print(f"Client disconnected from job {job_id} log stream.")
     except Exception as e:
         error_message = f"ERROR: An error occurred during log streaming: {str(e)}"
         print(f"Error in log streaming for job {job_id}: {e}")  # Server-side log

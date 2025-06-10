@@ -4,6 +4,7 @@ import './App.css';
 import BacktestSettingsForm from './components/BacktestSettingsForm';
 import BacktestResultPage from './components/BacktestResultPage'; // Import the new results page
 import LoadingScreen from './components/LoadingScreen'; // Import the LoadingScreen component
+import DataManagementPage from './components/DataManagementPage'; // Import DataManagementPage
 
 function App() {
   return (
@@ -17,6 +18,9 @@ function App() {
             <li>
               <Link to="/results">Results</Link>
             </li>
+            <li>
+              <Link to="/data-management">Data Management</Link> {/* Link to Data Management */}
+            </li>
           </ul>
         </nav>
         <header className="App-header">
@@ -27,6 +31,7 @@ function App() {
             <Route path="/" element={<BacktestSettingsForm />} />
             <Route path="/results" element={<BacktestResultPage />} />
             <Route path="/loading/:jobId" element={<LoadingScreen />} /> {/* Added route for LoadingScreen */}
+            <Route path="/data-management" element={<DataManagementPage />} /> {/* Route for Data Management */}
           </Routes>
         </main>
       </div>

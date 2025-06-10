@@ -73,7 +73,7 @@ function DataManagementPage() {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const data = await response.json();
-            setOutputFileList(data);
+            setOutputFileList(data.files || []); // Correctly extract the 'files' array, with a fallback
             setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ファイルリストを更新しました。`]);
         } catch (error) {
             console.error("Failed to fetch file list:", error);

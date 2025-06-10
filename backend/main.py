@@ -7,6 +7,8 @@ import threading # Add threading import
 import pandas as pd # Added import
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+import subprocess # Added import
+import sys # Added import
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -172,32 +174,251 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
             "trade_log": None
         })
 
-def _blocking_data_collection_simulation(job_id: str, request_params: dict, job_store: Dict):
+def _blocking_data_collection_simulation(request_params: dict) -> Dict[str, Any]:
     """
-    Synchronous function to simulate blocking data collection.
+    Synchronous function to perform actual data collection by calling collect_data.py.
+    Returns a dictionary with status and message.
     """
+    status_updates = []
+    output_filepath = None
+    successful_csv_files = []
+    first_error_message = None
+    # Default to failure until success is explicitly determined
+    final_status = "failed"
+    final_message = "Data collection process did not start or encountered an unexpected issue."
+
     try:
-        job_store[job_id]["status"] = "running"
-        time.sleep(0.1) # Add small delay
-        # Simulate work using time.sleep
-        time.sleep(5) # Simulate blocking I/O operation
-        job_store[job_id]["status"] = "completed"
-        job_store[job_id]["message"] = "Data collection finished."
+        symbol = request_params.get("symbol")
+        start_year = request_params.get("startYear")
+        start_month = request_params.get("startMonth")
+        end_year = request_params.get("endYear")
+        end_month = request_params.get("endMonth")
+        api_key = request_params.get("apiKey")
+
+        if not api_key:
+            return {"status": "failed", "message": "API key is missing."}
+
+        if not all([symbol, start_year, start_month, end_year, end_month]):
+            return {"status": "failed", "message": "Missing required parameters for data collection."}
+
+        current_year = int(start_year)
+        current_month = int(start_month)
+        target_end_year = int(end_year)
+        target_end_month = int(end_month)
+
+        script_dir = os.path.dirname(__file__)
+        project_root = os.path.join(script_dir, '..')
+        collect_data_script_path = os.path.join(project_root, 'collect_data.py')
+
+        # Ensure DATA_DIR exists (though collect_data.py might also do this)
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR, exist_ok=True)
+
+        while (current_year < target_end_year) or \
+              (current_year == target_end_year and current_month <= target_end_month):
+
+            month_str = str(current_month).zfill(2)
+            year_str = str(current_year)
+
+            status_updates.append(f"Collecting data for {symbol} {year_str}-{month_str}...")
+            print(f"Running collect_data.py for {symbol} {year_str}-{month_str}") # Server log
+
+            command = [
+                sys.executable,
+                collect_data_script_path,
+                "--symbol", symbol,
+                "--year", year_str,
+                "--month", month_str,
+                "--api-key", api_key,
+                "--output-dir", DATA_DIR
+            ]
+
+            try:
+                process = subprocess.run(
+                    command,
+                    cwd=project_root, # Run from project root
+                    capture_output=True,
+                    text=True,
+                    check=False # Do not raise exception on non-zero exit, handle manually
+                )
+
+                if process.returncode != 0:
+                    error_output = process.stderr.strip() if process.stderr else process.stdout.strip()
+                    error_msg = f"Error collecting data for {year_str}-{month_str}: {error_output} (Exit code: {process.returncode})"
+                    status_updates.append(error_msg)
+                    print(error_msg) # Server log
+                    if not first_error_message: # Store first error
+                        first_error_message = error_msg
+                    # As per instruction: "collect as much as possible and report errors"
+                    # So, we continue to the next month. If we wanted to stop, we'd set final_status = "failed" here.
+                else:
+                    success_msg = f"Successfully collected data for {year_str}-{month_str}."
+                    if process.stdout:
+                        success_msg += f" Output: {process.stdout.strip()}"
+                    status_updates.append(success_msg)
+                    print(success_msg) # Server log
+                    # Assume collect_data.py generates a file named SYMBOL_YEAR_MONTH.csv
+                    # This needs to match actual output of collect_data.py
+                    individual_csv_name = f"{symbol}_{year_str}_{month_str}.csv"
+                    individual_csv_path = os.path.join(DATA_DIR, individual_csv_name)
+                    if os.path.exists(individual_csv_path): # Check if file was actually created
+                        successful_csv_files.append(individual_csv_path)
+                        status_updates.append(f"Added {individual_csv_path} to merge list.")
+                    else:
+                        error_msg_file_missing = f"Data for {year_str}-{month_str} collected by script, but output file {individual_csv_path} not found."
+                        status_updates.append(error_msg_file_missing)
+                        print(error_msg_file_missing) # Server log
+                        if not first_error_message:
+                            first_error_message = error_msg_file_missing
+                        # Consider this a partial failure for the month.
+
+            except Exception as e_sub: # Catch errors from subprocess.run itself
+                error_msg = f"Subprocess execution failed for {year_str}-{month_str}: {str(e_sub)}"
+                status_updates.append(error_msg)
+                print(error_msg) # Server log
+                if not first_error_message:
+                    first_error_message = error_msg
+                # Continue to next month
+
+            # Increment month and year
+            current_month += 1
+            if current_month > 12:
+                current_month = 1
+                current_year += 1
+
+        # CSV Merging Logic
+        if successful_csv_files:
+            status_updates.append(f"Attempting to merge {len(successful_csv_files)} successfully downloaded CSV file(s).")
+            print(f"Attempting to merge {len(successful_csv_files)} CSV file(s).")
+            all_dataframes = []
+            for f_path in successful_csv_files:
+                try:
+                    df = pd.read_csv(f_path)
+                    if not df.empty:
+                        all_dataframes.append(df)
+                        status_updates.append(f"Read {f_path} for merging.")
+                    else:
+                        status_updates.append(f"Warning: {f_path} is empty, skipping.")
+                        print(f"Warning: {f_path} is empty, skipping.")
+                except Exception as e_read:
+                    read_err_msg = f"Error reading CSV file {f_path} for merging: {str(e_read)}"
+                    status_updates.append(read_err_msg)
+                    print(read_err_msg)
+                    if not first_error_message: # Capture as a processing error
+                        first_error_message = read_err_msg
+
+            if all_dataframes:
+                try:
+                    combined_df = pd.concat(all_dataframes, ignore_index=True)
+
+                    # Ensure 'Timestamp' column exists and sort
+                    if 'Timestamp' in combined_df.columns:
+                        combined_df['Timestamp'] = pd.to_datetime(combined_df['Timestamp'])
+                        combined_df.sort_values(by='Timestamp', inplace=True)
+                        status_updates.append("Combined DataFrame sorted by Timestamp.")
+                    else:
+                        status_updates.append("Warning: 'Timestamp' column not found in combined data. Cannot sort by time.")
+                        print("Warning: 'Timestamp' column not found in combined data.")
+
+                    # Construct combined filename
+                    s_year_str = str(request_params.get("startYear"))
+                    s_month_str = str(request_params.get("startMonth")).zfill(2)
+                    e_year_str = str(request_params.get("endYear"))
+                    e_month_str = str(request_params.get("endMonth")).zfill(2)
+                    combined_filename = f"{symbol}_{s_year_str}{s_month_str}_{e_year_str}{e_month_str}.csv"
+                    output_filepath = os.path.join(DATA_DIR, combined_filename)
+
+                    combined_df.to_csv(output_filepath, index=False)
+                    status_updates.append(f"Successfully merged data to {output_filepath}.")
+                    print(f"Successfully merged data to {output_filepath}.")
+
+                    if not first_error_message: # All subprocess calls and merge succeeded
+                        final_status = "completed"
+                        final_message = f"Data collection and merging successful. Combined file: {output_filepath}"
+                    else: # Subprocess calls had errors, but merge was successful with partial data
+                        final_status = "completed" # Still "completed" for partial success if merge happens
+                        final_message = f"Data collection partially successful. Some months had errors. Combined file: {output_filepath}"
+
+                except Exception as e_merge:
+                    merge_err_msg = f"Error during CSV merging process: {str(e_merge)}"
+                    status_updates.append(merge_err_msg)
+                    print(merge_err_msg)
+                    if not first_error_message:
+                        first_error_message = merge_err_msg
+                    final_status = "failed"
+                    final_message = f"Data collection failed during CSV merging: {first_error_message}"
+                    output_filepath = None # Ensure no filepath on merge failure
+
+            elif not first_error_message: # Files were listed but all were empty/unreadable
+                final_status = "failed"
+                final_message = "Data collection failed: Successfully fetched month files were empty or unreadable."
+                status_updates.append("No dataframes could be read from successfully fetched files. Merge aborted.")
+                output_filepath = None
+            else: # Files were listed, all empty/unreadable, AND there was a previous subprocess error
+                final_status = "failed"
+                final_message = f"Data collection failed: {first_error_message}. Additionally, successfully fetched month files were empty or unreadable."
+                status_updates.append("No dataframes could be read from successfully fetched files. Merge aborted.")
+                output_filepath = None
+
+        elif not first_error_message: # No CSVs created and no prior errors from subprocess.
+            final_status = "failed"
+            final_message = "Data collection failed: No data files were created for the specified period."
+            status_updates.append("No individual CSV files were successfully created. Nothing to merge.")
+
+        else: # No CSVs created AND there were subprocess errors
+            final_status = "failed"
+            final_message = f"Data collection failed: {first_error_message}. No data files were created."
+            status_updates.append("No individual CSV files were successfully created due to errors. Nothing to merge.")
+
     except Exception as e:
-        job_store[job_id]["status"] = "failed"
-        job_store[job_id]["message"] = str(e)
+        error_msg = f"An unexpected error occurred during data collection: {str(e)}"
+        print(f"Outer exception in _blocking_data_collection_simulation: {error_msg}") # Server log
+        status_updates.append(error_msg)
+        # Ensure these are set if an outer exception occurs
+        final_status = "failed"
+        final_message = error_msg
+        output_filepath = None # No output file if there's a major error
+
+    return {"status": final_status, "message": final_message, "detailed_log": status_updates, "output_filepath": output_filepath}
+
 
 def manage_blocking_data_collection(job_id: str, request_params: dict):
     """
-    Manages the blocking data collection simulation using a separate thread.
+    Manages the data collection by running _blocking_data_collection_simulation in a thread.
+    Updates the job_store with the results.
     """
-    # job_store is global, _blocking_data_collection_simulation will access it.
-    thread = threading.Thread(
-        target=_blocking_data_collection_simulation,
-        args=(job_id, request_params, job_store), # Pass job_store here
-        daemon=True
-    )
-    thread.start()
+    try:
+        # Update job status to running before starting the thread
+        job_store[job_id]["status"] = "running"
+        job_store[job_id]["message"] = "Data collection process has started."
+
+        # Define a target function for the thread that calls the simulation
+        # and updates the job store with its results.
+        def thread_target():
+            collection_result = _blocking_data_collection_simulation(request_params)
+            job_store[job_id].update({
+                "status": collection_result.get("status", "failed"),
+                "message": collection_result.get("message", "An unknown error occurred in the collection worker."),
+                "detailed_log": collection_result.get("detailed_log", []),
+                "output_filepath": collection_result.get("output_filepath")
+            })
+            if collection_result.get("status") == "completed":
+                 print(f"Job {job_id} completed successfully: {collection_result.get('message')}")
+            else:
+                 print(f"Job {job_id} failed or completed with errors: {collection_result.get('message')}")
+
+
+        thread = threading.Thread(target=thread_target, daemon=True)
+        thread.start()
+
+    except Exception as e:
+        # This handles errors in setting up the thread, not errors inside the thread.
+        job_store[job_id].update({
+            "status": "failed",
+            "message": f"Failed to start data collection thread: {str(e)}"
+        })
+        print(f"Error starting data collection thread for job {job_id}: {str(e)}")
+
 
 app = FastAPI()
 

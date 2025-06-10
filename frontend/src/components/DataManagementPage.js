@@ -128,7 +128,7 @@ function DataManagementPage() {
         setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集リクエスト: ${JSON.stringify(Omit(collectionParams, ['api_key']))}`]);
 
         try {
-            const response = await fetch('/api/data/collect', {
+            const response = await fetch('http://localhost:8000/api/data/collect', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

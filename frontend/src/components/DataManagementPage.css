@@ -1,0 +1,131 @@
+.data-management-page {
+    font-family: sans-serif;
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.data-management-page header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.data-management-page h1 {
+    font-size: 1.5em;
+}
+
+.data-management-page h2 {
+    font-size: 1.2em;
+    margin-top: 30px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+.data-management-page section {
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+}
+
+.form-group {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.form-group label {
+    margin-right: 10px;
+    min-width: 80px;
+}
+
+.form-group input[type="password"],
+.form-group input[type="number"],
+.form-group select {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    margin-right: 10px;
+}
+
+.form-group input[type="number"] {
+    width: 70px;
+}
+
+.data-management-page button {
+    padding: 8px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-left: 5px;
+}
+
+.data-management-page button:hover {
+    background-color: #0056b3;
+}
+
+.api-key-settings small {
+    display: block;
+    margin-top: 5px;
+    font-size: 0.8em;
+    color: #666;
+}
+
+.log-display {
+    border: 1px solid #ccc;
+    padding: 10px;
+    height: 150px;
+    overflow-y: auto;
+    background-color: #fff;
+    margin-bottom: 10px;
+}
+
+.log-display p {
+    margin: 0 0 5px 0;
+    font-size: 0.9em;
+    font-family: monospace;
+}
+
+.server-data-files table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.server-data-files th,
+.server-data-files td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+.server-data-files th {
+    background-color: #f0f0f0;
+}
+
+/* ... existing styles ... */
+
+.button-like-link {
+    display: inline-block;
+    padding: 8px 15px;
+    background-color: #6c757d; /* A different color to distinguish from action buttons */
+    color: white;
+    text-decoration: none;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: inherit; /* Or set a specific size */
+    line-height: normal; /* Ensure proper alignment */
+}
+
+.button-like-link:hover {
+    background-color: #5a6268;
+}

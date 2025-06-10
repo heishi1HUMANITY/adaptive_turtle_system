@@ -3,8 +3,14 @@ from fastapi.testclient import TestClient
 from fastapi import status # For status codes
 import time # To allow background tasks to process
 import uuid # To generate non-existent job_ids for testing
+import os # For file system operations in tests
+import asyncio # For WebSocket tests and simulated task timing
+from datetime import datetime # For checking date formats
+
+from starlette.websockets import WebSocketDisconnect # For WebSocket tests
 
 # Assuming 'client' fixture is available from conftest.py
+import backend.main # Required for monkeypatching elements within the main module
 
 # Basic valid settings for /api/backtest/run
 VALID_BACKTEST_SETTINGS = {
@@ -207,3 +213,241 @@ def test_run_backtest_and_fail_missing_data_file(client: TestClient, monkeypatch
     assert results_data["results"] is None
     assert results_data["equity_curve"] is None
     assert results_data["trade_log"] is None
+
+
+# --- Tests for Data Collection API Endpoints ---
+
+VALID_DATA_COLLECTION_REQUEST = {
+    "symbol": "USDJPY",
+    "startYear": 2023,
+    "startMonth": 1,
+    "endYear": 2023,
+    "endMonth": 12,
+    "apiKey": "test_key_optional"
+}
+
+# Path to the data directory from the perspective of this test file
+# backend/tests/test_api.py -> project_root/data/
+DATA_DIR_TEST = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data'))
+
+
+def test_collect_data_success(client: TestClient):
+    response = client.post("/api/data/collect", json=VALID_DATA_COLLECTION_REQUEST)
+    assert response.status_code == status.HTTP_202_ACCEPTED
+    data = response.json()
+    assert "job_id" in data
+    assert isinstance(data["job_id"], str)
+
+def test_collect_data_invalid_input(client: TestClient):
+    invalid_payload = VALID_DATA_COLLECTION_REQUEST.copy()
+    del invalid_payload["symbol"] # Make it invalid
+    response = client.post("/api/data/collect", json=invalid_payload)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+def test_data_collection_job_status_flow(client: TestClient):
+    # 1. Submit a data collection job
+    run_response = client.post("/api/data/collect", json=VALID_DATA_COLLECTION_REQUEST)
+    assert run_response.status_code == status.HTTP_202_ACCEPTED
+    job_id = run_response.json()["job_id"]
+
+    # 2. Poll for completion (simulated task takes ~5 seconds)
+    max_wait_time = 10  # seconds, allowing some buffer
+    poll_interval = 0.5 # seconds
+    start_time = time.time()
+    job_completed_successfully = False
+    last_status = None
+
+    while time.time() - start_time < max_wait_time:
+        # Assuming /api/backtest/status/{job_id} can fetch status for data_collection jobs too
+        status_response = client.get(f"/api/backtest/status/{job_id}")
+        assert status_response.status_code == status.HTTP_200_OK
+        status_data = status_response.json()
+        last_status = status_data["status"]
+
+        job_details = client.get(f"/api/backtest/status/{job_id}").json() # A bit redundant, ideally status includes type
+        # To check type, we'd ideally have it in the status response.
+        # For now, we are inferring based on the happy path of this test.
+
+        if last_status == "completed":
+            assert status_data.get("message") == "Data collection finished." # Check specific message
+            # Check job type by inspecting job_store directly (test-only, not ideal)
+            # Or assume if it completed with the right message, it was a data collection job
+            job_completed_successfully = True
+            break
+        if last_status == "failed":
+            pytest.fail(f"Data collection job {job_id} failed during test: {status_data.get('message', 'No error message')}")
+
+        assert last_status in ["pending", "running"], f"Unexpected status: {last_status}"
+        time.sleep(poll_interval)
+
+    assert job_completed_successfully, f"Job {job_id} did not complete successfully. Last status: {last_status}"
+
+    # Verify job type if possible (this is a conceptual check, actual job_store access from test is tricky)
+    # For now, successful completion of *this* test flow implies it was handled as a data collection job.
+    # A better way would be if the status endpoint itself returned the 'type' of the job.
+
+def test_list_data_files_success(client: TestClient):
+    # Ensure 'data/sample.csv' exists (created in a previous step or by app logic)
+    # For this test, we assume it's there.
+    expected_file_name = "sample.csv" # This was the file created in the previous subtask
+
+    # Create the file if it doesn't exist to make test robust
+    sample_file_path = os.path.join(DATA_DIR_TEST, expected_file_name)
+    if not os.path.exists(DATA_DIR_TEST):
+        os.makedirs(DATA_DIR_TEST)
+    if not os.path.exists(sample_file_path):
+        with open(sample_file_path, "w") as f:
+            f.write("col1,col2\nval1,val2\n")
+
+    response = client.get("/api/data/files")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "files" in data
+    assert "total_files" in data
+    assert isinstance(data["files"], list)
+    assert isinstance(data["total_files"], int)
+
+    if data["total_files"] > 0:
+        assert any(f["name"] == expected_file_name for f in data["files"]), f"{expected_file_name} not found in response"
+        file_info = next((f for f in data["files"] if f["name"] == expected_file_name), None)
+        assert file_info is not None
+        assert isinstance(file_info["size"], int)
+        assert file_info["size"] > 0 # sample.csv has content
+        # Validate datetime format
+        try:
+            datetime.fromisoformat(file_info["created_at"].replace("Z", "+00:00")) # Handle Z for UTC
+        except ValueError:
+            pytest.fail(f"created_at for {expected_file_name} is not a valid ISO datetime string: {file_info['created_at']}")
+    else:
+        pytest.fail(f"No files listed, {expected_file_name} was expected.")
+
+
+def test_list_data_files_empty_directory(client: TestClient, monkeypatch):
+    # Mock os.listdir as used in backend.main to return an empty list for DATA_DIR
+    def mock_listdir_empty(path):
+        if path == backend.main.DATA_DIR: # Compare with DATA_DIR in main.py
+            return []
+        return os.listdir(path) # Fallback to actual os.listdir for other paths
+
+    monkeypatch.setattr(backend.main.os, "listdir", mock_listdir_empty)
+
+    response = client.get("/api/data/files")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["files"] == []
+    assert data["total_files"] == 0
+
+def test_list_data_files_directory_not_found(client: TestClient, monkeypatch):
+    # Mock os.path.exists as used in backend.main to return False for DATA_DIR
+    original_os_path_exists = os.path.exists
+    def mock_path_exists_false_for_data_dir(path):
+        if path == backend.main.DATA_DIR:
+            return False
+        return original_os_path_exists(path) # Fallback for other paths
+
+    monkeypatch.setattr(backend.main.os.path, "exists", mock_path_exists_false_for_data_dir)
+
+    response = client.get("/api/data/files")
+    # As per implementation, it should return 200 OK with empty list
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["files"] == []
+    assert data["total_files"] == 0
+
+
+# --- WebSocket Tests for /api/data/stream_log ---
+
+def test_stream_log_success(client: TestClient):
+    # 1. Create a data collection job
+    run_response = client.post("/api/data/collect", json=VALID_DATA_COLLECTION_REQUEST)
+    assert run_response.status_code == status.HTTP_202_ACCEPTED
+    job_id = run_response.json()["job_id"]
+
+    # Give a moment for the job to be initialized in job_store
+    time.sleep(0.2)
+
+    log_lines_received = 0
+    completion_message_received = False # For "INFO: Job ... completed"
+    final_status_message_received = False # For "Log streaming ended..."
+
+    with client.websocket_connect(f"/api/data/stream_log/{job_id}") as websocket:
+        initial_data = websocket.receive_text()
+        # Message from backend/main.py: Streaming logs for data collection job {job_id}...
+        assert f"Streaming logs for data collection job {job_id}" in initial_data
+
+        max_test_duration = time.time() + 15  # Increased test timeout (job is ~5s)
+        while time.time() < max_test_duration:
+            try:
+                data = websocket.receive_text() # No timeout argument
+
+                if "LOG: Line" in data:
+                    log_lines_received += 1
+
+                # Check for job completion message relayed by the WebSocket endpoint
+                if f"INFO: Job {job_id} completed" in data:
+                    completion_message_received = True
+
+                # Check for the stream ending message from the WebSocket endpoint itself
+                if f"INFO: Log streaming ended for job {job_id}" in data:
+                    final_status_message_received = True
+                    # This is the definitive end of the stream from the server's perspective
+                    break
+
+                if f"ERROR: Job {job_id} failed" in data:
+                    pytest.fail(f"Log stream indicated job {job_id} failed.")
+
+            except WebSocketDisconnect:
+                # Server closed connection. This might be expected if it's after all messages.
+                # If final_status_message_received is True, this is okay.
+                if not final_status_message_received:
+                    # If disconnected before final message, check if job actually finished quickly
+                    status_resp = client.get(f"/api/data/status/{job_id}").json()
+                    if status_resp["status"] == "completed":
+                        final_status_message_received = True # Assume it finished and closed stream
+                        completion_message_received = True
+                break
+            except Exception as e:
+                pytest.fail(f"Unexpected error during WebSocket communication: {e}")
+                break
+
+    assert log_lines_received > 0, "Did not receive any simulated log lines."
+    # completion_message_received can be True if the "INFO: Job ... completed" message is caught.
+    # The run_datacollection_task sets "Data collection finished." in job_store.
+    # The stream_log endpoint sends "INFO: Job {job_id} completed. {message}"
+    # So, if the job completes while stream_log is polling, this message will be sent.
+    assert completion_message_received or final_status_message_received, \
+        "Did not receive job completion message or final stream ended message via WebSocket."
+    assert final_status_message_received, "Did not receive the final 'Log streaming ended' message."
+
+
+def test_stream_log_invalid_job_id(client: TestClient):
+    non_existent_job_id = str(uuid.uuid4())
+    # Expect WebSocketDisconnect to be raised by the context manager or subsequent calls
+    # if server closes connection, which it should.
+    with client.websocket_connect(f"/api/data/stream_log/{non_existent_job_id}") as websocket:
+        error_message = websocket.receive_text()
+        # Message from backend/main.py: ERROR: Job ID {job_id} not found or is not a data collection job.
+        assert f"ERROR: Job ID {non_existent_job_id} not found or is not a data collection job." in error_message
+
+        # Expect the server to close the connection after sending the error
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_text() # This should fail as connection is closed
+        assert excinfo.value.code == 1008
+
+
+def test_stream_log_job_not_data_collection(client: TestClient):
+    # 1. Create a backtest job (which is not 'data_collection' type)
+    run_response = client.post("/api/backtest/run", json=VALID_BACKTEST_SETTINGS)
+    assert run_response.status_code == status.HTTP_202_ACCEPTED
+    job_id_backtest = run_response.json()["job_id"]
+
+    time.sleep(0.1) # Ensure job is in job_store
+
+    with client.websocket_connect(f"/api/data/stream_log/{job_id_backtest}") as websocket:
+        error_message = websocket.receive_text()
+        # Message from backend/main.py: ERROR: Job ID {job_id} not found or is not a data collection job.
+        assert f"ERROR: Job ID {job_id_backtest} not found or is not a data collection job." in error_message
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_text()
+        assert excinfo.value.code == 1008

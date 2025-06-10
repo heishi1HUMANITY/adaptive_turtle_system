@@ -4,6 +4,7 @@ import './DataManagementPage.css';
 
 function DataManagementPage() {
     const [apiKey, setApiKey] = useState('');
+    const [apiKeyError, setApiKeyError] = useState(''); // Error state for API key
 
     // Load API key from localStorage on component mount
     useEffect(() => {
@@ -13,13 +14,27 @@ function DataManagementPage() {
         }
     }, []);
 
+    const handleApiKeyChange = (e) => {
+        setApiKey(e.target.value);
+        if (apiKeyError) {
+            setApiKeyError(''); // Clear API key error when user types
+        }
+    };
+
     // Handle API key save
     const handleSaveApiKey = () => {
+        if (!apiKey.trim()) {
+            setApiKeyError('APIキーを入力してください。');
+            return;
+        }
         localStorage.setItem('alphaVantageApiKey', apiKey);
+        setApiKeyError(''); // Clear any previous error
         alert('APIキーを保存しました。');
     };
 
     // Data Collection Form States
+    const [isCollecting, setIsCollecting] = useState(false);
+    const [collectionError, setCollectionError] = useState(''); // Error state for general collection errors
     const [currencyPair, setCurrencyPair] = useState('USDJPY');
     const [startYear, setStartYear] = useState(new Date().getFullYear());
     const [startMonth, setStartMonth] = useState(1);
@@ -28,83 +43,61 @@ function DataManagementPage() {
 
     // Log Display States and Handlers
     const [logMessages, setLogMessages] = useState([]);
+    const [logStreamError, setLogStreamError] = useState(''); // Error state for WebSocket
     const ws = useRef(null); // Using useRef for WebSocket instance
 
+    // Clear logs and close WebSocket connection on component unmount
     useEffect(() => {
-        // Mock WebSocket connection
-        // In a real scenario, the URL would be something like 'ws://localhost:8000/ws/logs'
-        // For now, we simulate messages
-        ws.current = {
-            send: (message) => console.log("Mock WS Send:", message),
-            close: () => console.log("Mock WS Closed"),
-        };
-        const mockLogMessagesArray = [ // Renamed to avoid conflict
-            "データ収集プロセスを開始しました...",
-            `通貨ペア: ${currencyPair}, 期間: ${startYear}/${startMonth} - ${endYear}/${endMonth}`,
-            "2023年1月のデータを取得中...",
-            "-> レートリミット対策のため15秒待機します...",
-            "2023年2月のデータを取得中...",
-            "データ収集が完了しました。",
-        ];
-        let messageIndex = 0;
-        const intervalId = setInterval(() => {
-            if (messageIndex < mockLogMessagesArray.length) {
-                const newMessage = `> ${new Date().toLocaleTimeString()}: ${mockLogMessagesArray[messageIndex]}`;
-                setLogMessages(prevMessages => [...prevMessages, newMessage]);
-                messageIndex++;
-            }
-        }, 2000);
         return () => {
-            clearInterval(intervalId);
-            if (ws.current && ws.current.close) {
-                 ws.current.close();
+            if (ws.current) {
+                ws.current.close();
             }
         };
-    }, [currencyPair, startYear, startMonth, endYear, endMonth]); // Dependencies for mock logs
+    }, []);
 
     const handleClearLogs = () => {
         setLogMessages([]);
     };
 
     // Data File List
-    const [fileList, setFileList] = useState([]);
+    const [outputFileList, setOutputFileList] = useState([]);
+    const [fileListError, setFileListError] = useState(''); // Error state for file list fetching
 
-    const fetchFileList = async () => {
+    const fetchOutputFileList = async () => {
+        setFileListError(''); // Clear previous error
+        // Keep existing log message for starting update
         setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ファイルリストを更新中...`]);
         try {
-            // Mocking the API call
-            // const response = await fetch('/api/data/files');
-            // if (!response.ok) {
-            //     throw new Error(`HTTP error! status: ${response.status}`);
-            // }
-            // const data = await response.json();
-
-            // Mock data:
-            const mockData = [
-                { name: "USDJPY_M1_20230101_20231231.csv", size: "25.8 MB", createdAt: "2025-06-09 10:30" },
-                { name: "EURUSD_M1_20240101_20240608.csv", size: "12.1 MB", createdAt: "2025-06-08 15:00" },
-                { name: "GBPUSD_M1_20230501_20231031.csv", size: "15.2 MB", createdAt: "2025-05-15 12:00" },
-            ];
-
-            // Simulate API delay
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            setFileList(mockData);
+            const response = await fetch('/api/data/files');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            setOutputFileList(data);
             setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ファイルリストを更新しました。`]);
         } catch (error) {
             console.error("Failed to fetch file list:", error);
-            setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ファイルリストの更新に失敗しました: ${error.message}`]);
-            setFileList([]); // Clear list on error or set to a default error state
+            const errorMsg = `ファイルリストの取得に失敗しました。 (${error.message})`;
+            setFileListError(errorMsg);
+            setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ${errorMsg}`]);
+            setOutputFileList([]); // Clear list on error
         }
     };
 
     // Fetch file list on component mount
     useEffect(() => {
-        fetchFileList();
+        fetchOutputFileList();
     }, []); // Empty dependency array means this runs once on mount
 
 
-    const handleStartDataCollection = () => {
+    const handleStartDataCollection = async () => {
+        if (isCollecting) return;
+
+        // Clear previous errors
+        setApiKeyError('');
+        setCollectionError('');
+        setLogStreamError('');
+
         if (!currencyPair) {
             alert('通貨ペアを選択してください。');
             return;
@@ -113,20 +106,105 @@ function DataManagementPage() {
             alert('開始年月は終了年月より前に設定してください。');
             return;
         }
-        const collectionParams = {
-            apiKey: apiKey, // Not sent to backend per spec, but kept for now
-            currencyPair,
-            timeframe: 'M1',
-            startDate: `${startYear}-${String(startMonth).padStart(2, '0')}-01`,
-            endDate: `${endYear}-${String(endMonth).padStart(2, '0')}-01`,
-        };
-        console.log('Starting data collection with params:', collectionParams);
-        setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集リクエスト: ${JSON.stringify(collectionParams)}`]);
 
-        // Placeholder for actual API call to /api/data/collect
-        // After successful collection, the backend should ideally trigger an update to the file list,
-        // or the frontend could call fetchFileList() again.
-        alert('データ収集リクエストを送信しました (ログを確認してください)。');
+        setIsCollecting(true);
+        setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集プロセスを開始します...`]);
+
+        const storedApiKey = localStorage.getItem('alphaVantageApiKey');
+        if (!storedApiKey) {
+            setApiKeyError('APIキーが設定されていません。設定画面でAPIキーを保存してください。');
+            setIsCollecting(false);
+            return;
+        }
+
+        const collectionParams = {
+            api_key: storedApiKey,
+            currency_pair: currencyPair,
+            timeframe: 'M1', // Assuming M1 is fixed as per UI
+            start_date: `${startYear}-${String(startMonth).padStart(2, '0')}-01`,
+            end_date: `${endYear}-${String(endMonth).padStart(2, '0')}-01`,
+        };
+
+        setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集リクエスト: ${JSON.stringify(Omit(collectionParams, ['api_key']))}`]);
+
+        try {
+            const response = await fetch('/api/data/collect', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(collectionParams),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Response parsing failed' }));
+                // Check for specific API key error (e.g., 401 Unauthorized or a specific message from backend)
+                if (response.status === 401 || (errorData.message && errorData.message.toLowerCase().includes('invalid api key'))) {
+                    setApiKeyError('APIキーが不正です。正しいキーを入力してください。');
+                } else {
+                    setCollectionError(`データ収集の開始に失敗しました。サーバーエラー: ${response.status} ${errorData.message || response.statusText}`);
+                }
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.message || response.statusText}`);
+            }
+
+            const result = await response.json();
+            const jobId = result.job_id;
+            setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集ジョブ開始 (Job ID: ${jobId})`]);
+
+            // Close existing WebSocket connection if any
+            if (ws.current) {
+                ws.current.close();
+            }
+
+            // Establish WebSocket connection
+            const wsUrl = `ws://localhost:8000/api/data/stream_log/${jobId}`;
+            ws.current = new WebSocket(wsUrl);
+
+            ws.current.onopen = () => {
+                setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: WebSocket接続確立 (${wsUrl})`]);
+            };
+
+            ws.current.onmessage = (event) => {
+                setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ${event.data}`]);
+            };
+
+            ws.current.onerror = (error) => {
+                console.error("WebSocket error:", error);
+                const errorMsg = `ログストリームへの接続中にエラーが発生しました。 (${error.message || '詳細不明'})`;
+                setLogStreamError(errorMsg);
+                setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ${errorMsg}`]);
+                setIsCollecting(false);
+            };
+
+            ws.current.onclose = (event) => {
+                if (event.wasClean) {
+                    setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: WebSocket接続が正常に終了しました。`]);
+                } else {
+                    const errorMsg = `ログストリーム接続が予期せず切断されました。(Code: ${event.code})`;
+                    setLogStreamError(errorMsg);
+                    setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ${errorMsg}`]);
+                }
+                fetchOutputFileList();
+                setIsCollecting(false);
+            };
+
+        } catch (error) {
+            // This catch is for the fetch /api/data/collect part
+            // Error messages (apiKeyError or collectionError) are already set if response was not ok.
+            // If error is not from response.ok check (e.g. network error), set collectionError.
+            if (!apiKeyError && !collectionError) { // Avoid overwriting specific error
+                 setCollectionError(`データ収集リクエストに失敗しました: ${error.message}`);
+            }
+            setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集の開始に失敗しました: ${error.message}`]);
+            setIsCollecting(false);
+        }
+    };
+
+    // Helper to omit api_key for logging
+    const Omit = (obj, keys) => {
+        const newObj = { ...obj };
+        keys.forEach(key => delete newObj[key]);
+        return newObj;
     };
 
     return (
@@ -145,20 +223,21 @@ function DataManagementPage() {
                         type="password"
                         id="apiKeyInput"
                         value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
+                        onChange={handleApiKeyChange}
                         placeholder="Enter your API key"
                     />
                     <button onClick={handleSaveApiKey}>保存</button>
                 </div>
+                {apiKeyError && <p className="error-message api-key-error">{apiKeyError}</p>}
                 <small>APIキーはブラウザに安全に保存され、外部には送信されません。</small>
             </section>
 
             <section className="new-data-collection">
                 <h2>2. 新規データ収集</h2>
-                {/* ... (data collection form JSX remains the same) ... */}
+                {collectionError && <p className="error-message collection-error">{collectionError}</p>}
                 <div className="form-group">
                     <label htmlFor="currencyPair">通貨ペア:</label>
-                    <select id="currencyPair" value={currencyPair} onChange={(e) => setCurrencyPair(e.target.value)}>
+                    <select id="currencyPair" value={currencyPair} onChange={(e) => setCurrencyPair(e.target.value)} disabled={isCollecting}>
                         <option value="USDJPY">USDJPY</option>
                         <option value="EURUSD">EURUSD</option>
                         <option value="GBPUSD">GBPUSD</option>
@@ -170,16 +249,20 @@ function DataManagementPage() {
                 </div>
                 <div className="form-group">
                     <label>取得期間:</label>
-                    <input type="number" value={startYear} onChange={(e) => setStartYear(parseInt(e.target.value))} placeholder="YYYY" />年
-                    <input type="number" value={startMonth} onChange={(e) => setStartMonth(parseInt(e.target.value))} placeholder="MM" min="1" max="12" />月 から
-                    <input type="number" value={endYear} onChange={(e) => setEndYear(parseInt(e.target.value))} placeholder="YYYY" />年
-                    <input type="number" value={endMonth} onChange={(e) => setEndMonth(parseInt(e.target.value))} placeholder="MM" min="1" max="12"/>月 まで
+                    <input type="number" value={startYear} onChange={(e) => setStartYear(parseInt(e.target.value))} placeholder="YYYY" disabled={isCollecting} />年
+                    <input type="number" value={startMonth} onChange={(e) => setStartMonth(parseInt(e.target.value))} placeholder="MM" min="1" max="12" disabled={isCollecting} />月 から
+                    <input type="number" value={endYear} onChange={(e) => setEndYear(parseInt(e.target.value))} placeholder="YYYY" disabled={isCollecting} />年
+                    <input type="number" value={endMonth} onChange={(e) => setEndMonth(parseInt(e.target.value))} placeholder="MM" min="1" max="12" disabled={isCollecting} />月 まで
                 </div>
-                <button onClick={handleStartDataCollection}>データ収集を開始</button>
+                <button onClick={handleStartDataCollection} disabled={isCollecting}>
+                    {isCollecting ? '収集中...' : 'データ収集を開始'}
+                </button>
+                {isCollecting && <p className="collecting-message">データ収集中です。完了までお待ちください...</p>}
             </section>
 
             <section className="collection-status-log">
                 <h2>3. 収集ステータス＆ログ</h2>
+                {logStreamError && <p className="error-message log-stream-error">{logStreamError}</p>}
                 <div className="log-display">
                     {logMessages.map((msg, index) => (
                         <p key={index}>{msg}</p>
@@ -190,7 +273,8 @@ function DataManagementPage() {
 
             <section className="server-data-files">
                 <h2>4. サーバー上のデータファイル一覧</h2>
-                <button onClick={fetchFileList}>更新</button> {/* Refresh button */}
+                {fileListError && <p className="error-message file-list-error">{fileListError}</p>}
+                <button onClick={fetchOutputFileList} disabled={isCollecting}>更新</button> {/* Refresh button, disable if collecting */}
                 <table>
                     <thead>
                         <tr>
@@ -200,8 +284,8 @@ function DataManagementPage() {
                         </tr>
                     </thead>
                     <tbody>
-                        {fileList.length > 0 ? (
-                            fileList.map((file, index) => (
+                        {outputFileList.length > 0 ? (
+                            outputFileList.map((file, index) => (
                                 <tr key={index}>
                                     <td>{file.name}</td>
                                     <td>{file.size}</td>
@@ -210,7 +294,7 @@ function DataManagementPage() {
                             ))
                         ) : (
                             <tr>
-                                <td colSpan="3">利用可能なデータファイルはありません。</td>
+                                <td colSpan="3">{fileListError ? 'エラーのため表示できません。' : '利用可能なデータファイルはありません。'}</td>
                             </tr>
                         )}
                     </tbody>

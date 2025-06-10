@@ -12,11 +12,19 @@ def fetch_forex_data(year, month, symbol, api_key):
     Symbol should be in format like 'USDJPY'.
     On error, prints to stderr and returns None.
     """
+    if len(symbol) < 4: # Basic validation for symbol format
+        print(f"  -> Invalid symbol format: {symbol}. Expected format like USDJPY.", file=sys.stderr)
+        return None
+    from_currency = symbol[:3]
+    to_currency = symbol[3:]
+
     url = (f'https://www.alphavantage.co/query?'
-           f'function=FX_INTRADAY_EXTENDED&symbol={symbol}&interval=1min&slice=year{year}month{month}&apikey={api_key}')
+           f'function=FX_INTRADAY&from_symbol={from_currency}&to_symbol={to_currency}'
+           f'&interval=1min&outputsize=full&apikey={api_key}')
 
     # This informational message can go to stdout as it's part of normal operation logging.
-    print(f"Fetching intraday data for {symbol} ({year}-{month:02d}) using API key {api_key[:5]}...")
+    # Year and month are kept for logging context, even if not used in API call directly.
+    print(f"Fetching intraday data for {symbol} (target period: {year}-{month:02d}) using API key {api_key[:5]}... (outputsize=full)")
 
     try:
         response = requests.get(url)

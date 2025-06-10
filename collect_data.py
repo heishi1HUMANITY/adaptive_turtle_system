@@ -5,6 +5,7 @@ import time
 import pandas as pd
 import requests
 import io
+import json # Added import
 
 def fetch_forex_data(year, month, symbol, api_key):
     """
@@ -32,12 +33,28 @@ def fetch_forex_data(year, month, symbol, api_key):
 
         csv_raw_data = response.content.decode('utf-8')
 
+        # Attempt to parse as JSON first to check for premium endpoint messages
+        try:
+            json_response = json.loads(csv_raw_data)
+            if isinstance(json_response, dict) and "Information" in json_response:
+                information_message = str(json_response["Information"]) # Ensure it's a string
+                if "premium endpoint" in information_message.lower():
+                    print(f"  -> API Error: This is a premium endpoint. Subscription required for {symbol}.", file=sys.stderr)
+                    print(f"     API Response: {csv_raw_data[:1000]}", file=sys.stderr)
+                    return None
+                # Potentially other informational messages could be handled here if needed
+        except json.JSONDecodeError:
+            # Not a JSON response, or malformed JSON. Proceed to CSV checks/parsing.
+            pass
+
+        # Existing checks for common errors or empty data (if not JSON error)
         if not csv_raw_data.strip() or \
            'Error Message' in csv_raw_data or \
-           ('Information' in csv_raw_data and 'API call frequency' in csv_raw_data):
-            print(f"  -> {year}年{month}月のデータ取得に失敗、またはデータが存在しません。", file=sys.stderr)
-            # api_response_snippet = csv_raw_data.splitlines()[0] if csv_raw_data.strip() else "Empty response" # Old line
-            print(f"     API Response: {csv_raw_data[:1000]}", file=sys.stderr) # Modified line
+           ('Information' in csv_raw_data and 'api call frequency' in csv_raw_data.lower()): # Check 'Information' for rate limits too
+            # The 'Information' check for rate limits might be redundant if json_response handled it,
+            # but kept for robustness if the JSON structure varies or for non-JSON info messages.
+            print(f"  -> {year}年{month}月のデータ取得に失敗、またはデータが存在しません（またはAPI制限）。", file=sys.stderr)
+            print(f"     API Response: {csv_raw_data[:1000]}", file=sys.stderr)
             return None
 
         df = pd.read_csv(io.StringIO(csv_raw_data))

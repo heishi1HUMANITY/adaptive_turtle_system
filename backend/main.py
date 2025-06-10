@@ -362,7 +362,7 @@ async def stream_log(websocket: WebSocket, job_id: str):
 
             if status == "running":
                 await websocket.send_text(f"LOG: Line {i+1} for job {job_id} (Status: {status})")
-                await asyncio.sleep(1)  # Wait 1 second
+                await asyncio.sleep(0.05)  # Wait 0.05 seconds
             elif status == "completed":
                 await websocket.send_text(f"INFO: Job {job_id} completed. {current_job_info.get('message', '')}")
                 break
@@ -371,7 +371,7 @@ async def stream_log(websocket: WebSocket, job_id: str):
                 break
             elif status == "pending":
                  await websocket.send_text(f"INFO: Job {job_id} is pending. Waiting for it to start...")
-                 await asyncio.sleep(1) # Wait for job to start
+                 await asyncio.sleep(0.05) # Wait for job to start
             else: # unknown status or job disappeared
                 await websocket.send_text(f"INFO: Job {job_id} status is {status}. Ending log stream.")
                 break

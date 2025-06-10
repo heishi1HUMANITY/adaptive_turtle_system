@@ -185,12 +185,12 @@ def _blocking_data_collection_simulation(job_id: str, request_params: dict, job_
         job_store[job_id]["status"] = "failed"
         job_store[job_id]["message"] = str(e)
 
-async def run_datacollection_task(job_id: str, request_params: dict):
+def manage_blocking_data_collection(job_id: str, request_params: dict):
     """
-    Background task to simulate data collection non-blockingly.
+    Manages the blocking data collection simulation.
     """
-    # job_store is accessible in this scope
-    await asyncio.to_thread(_blocking_data_collection_simulation, job_id, request_params, job_store)
+    # job_store is a global variable, so it should be accessible.
+    _blocking_data_collection_simulation(job_id, request_params, job_store)
 
 app = FastAPI()
 
@@ -236,7 +236,7 @@ async def start_data_collection(request: DataCollectionRequest, background_tasks
         "parameters": request.model_dump(),
         "message": "Data collection job initiated."
     }
-    background_tasks.add_task(run_datacollection_task, job_id, request.model_dump())
+    background_tasks.add_task(manage_blocking_data_collection, job_id, request.model_dump())
     return JobCreationResponse(job_id=job_id)
 
 

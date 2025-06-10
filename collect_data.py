@@ -7,11 +7,11 @@ import requests
 import io
 import json # Added import
 
-def fetch_forex_data(year, month, symbol, api_key):
+def fetch_forex_data(symbol, api_key):
     """
-    Fetches historical intraday data from Alpha Vantage using TIME_SERIES_INTRADAY.
+    Fetches all available historical intraday data from Alpha Vantage using TIME_SERIES_INTRADAY
+    with outputsize=full.
     Symbol should be in format like 'USDJPY' (though this endpoint is typically for stocks).
-    Month is specified as YYYY-MM.
     On error, prints to stderr and returns None.
     """
     # Symbol validation can be kept if it's still relevant for the expected format.
@@ -19,14 +19,12 @@ def fetch_forex_data(year, month, symbol, api_key):
     #     print(f"  -> Invalid symbol: {symbol}. Symbol cannot be empty.", file=sys.stderr)
     #     return None
 
-    year_month_str = f"{year}-{str(month).zfill(2)}"
-
     url = (f'https://www.alphavantage.co/query?'
            f'function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=1min'
-           f'&month={year_month_str}&outputsize=full&apikey={api_key}')
+           f'&outputsize=full&apikey={api_key}') # Removed month parameter
 
     # This informational message can go to stdout as it's part of normal operation logging.
-    print(f"Fetching TIME_SERIES_INTRADAY data for {symbol} (month: {year_month_str}) using API key {api_key[:5]}...")
+    print(f"Fetching full TIME_SERIES_INTRADAY data for {symbol} using API key {api_key[:5]}...")
 
     try:
         response = requests.get(url)
@@ -67,14 +65,14 @@ def fetch_forex_data(year, month, symbol, api_key):
             print(f"  -> API Information: {information_message}", file=sys.stderr)
             # If an "Information" message is present, it often means no valid time series data will follow.
             # Consider returning None unless specific "Information" messages are known to be benign.
-            print(f"     (Assuming this information means no data for {symbol} {year_month_str})")
+            print(f"     (Assuming this information means no data for {symbol})") # Removed year_month_str
             return None
 
 
         # Extract Meta Data
         meta_data = json_response.get("Meta Data")
         if not meta_data or not isinstance(meta_data, dict):
-            print(f"  -> API Error: 'Meta Data' not found or not in expected format in JSON response for {symbol} {year_month_str}.", file=sys.stderr)
+            print(f"  -> API Error: 'Meta Data' not found or not in expected format in JSON response for {symbol}.", file=sys.stderr) # Removed year_month_str
             print(f"     JSON Response Snippet: {str(json_response)[:1000]}", file=sys.stderr)
             return None
 
@@ -97,7 +95,7 @@ def fetch_forex_data(year, month, symbol, api_key):
                 break
 
         if not time_series_data or not isinstance(time_series_data, dict) or not time_series_data:
-            print(f"  -> API Error: Time series data not found or is empty in JSON response for {symbol} {year_month_str}. Tried keys: {possible_ts_keys}", file=sys.stderr)
+            print(f"  -> API Error: Time series data not found or is empty in JSON response for {symbol}. Tried keys: {possible_ts_keys}", file=sys.stderr) # Removed year_month_str
             print(f"     JSON Response Snippet: {str(json_response)[:1000]}", file=sys.stderr)
             return None
 
@@ -137,7 +135,7 @@ def fetch_forex_data(year, month, symbol, api_key):
         df = df[['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']]
 
         if df.empty:
-            print(f"  -> Data for {symbol} {year_month_str} is empty after processing JSON.", file=sys.stderr)
+            print(f"  -> Data for {symbol} is empty after processing JSON.", file=sys.stderr) # Removed year_month_str
             return None
 
         print(f"  -> {len(df)}件のデータをJSONから取得・処理しました。")
@@ -158,17 +156,17 @@ def fetch_forex_data(year, month, symbol, api_key):
 
 def main(args):
     # These initial messages can be stdout
-    print(f"Starting data collection for Symbol: {args.symbol}, Year: {args.year}, Month: {args.month}")
+    print(f"Starting data collection for Symbol: {args.symbol} (full timeseries)") # Updated print
     print(f"Output directory: {args.output_dir}")
 
-    fetched_data_df = fetch_forex_data(args.year, args.month, args.symbol, args.api_key)
+    fetched_data_df = fetch_forex_data(args.symbol, args.api_key) # Updated call
 
     if fetched_data_df is None:
-        print(f"{args.symbol} のデータ取得または処理に失敗しました。詳しくは上記のエラーメッセージをご確認ください。", file=sys.stderr)
+        print(f"{args.symbol} のデータ取得または処理に失敗しました。詳しくは上記のエラーメッセージをご確認ください。", file=sys.stderr) # Message is general enough
         sys.exit(1)
 
     if fetched_data_df.empty: # Should be caught by fetch_forex_data now, but as a safeguard
-        print(f"{args.symbol} - {args.year}-{args.month:02d} のデータが見つかりませんでした（空のデータセット）。", file=sys.stderr)
+        print(f"{args.symbol} のデータが見つかりませんでした（空のデータセット）。", file=sys.stderr) # Updated message
         sys.exit(1)
 
     try:
@@ -178,12 +176,11 @@ def main(args):
             print(f"Creating output directory: {args.output_dir}")
             os.makedirs(args.output_dir) # This can raise OSError
 
-        # Sort data by Timestamp before calculating dates and saving
+        # Sort data by Timestamp before saving (still good practice)
         fetched_data_df.sort_values(by='Timestamp', inplace=True)
 
-        start_date = fetched_data_df['Timestamp'].min().strftime('%Y%m%d')
-        end_date = fetched_data_df['Timestamp'].max().strftime('%Y%m%d')
-        output_filename = f'{args.symbol}_M1_{start_date}_{end_date}.csv'
+        # Use fixed output filename
+        output_filename = f'{args.symbol}_M1_full_timeseries.csv' # Changed filename
         output_path = os.path.join(args.output_dir, output_filename)
 
         fetched_data_df.to_csv(output_path, index=False)
@@ -206,11 +203,10 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Fetch and save forex data from Alpha Vantage for a specific month using FX_INTRADAY_EXTENDED.")
+    parser = argparse.ArgumentParser(description="Fetch and save full historical intraday forex data from Alpha Vantage using TIME_SERIES_INTRADAY.") # Updated description
     # Argument parser errors automatically go to stderr and exit.
     parser.add_argument("--symbol", type=str, required=True, help="Trading symbol (e.g., USDJPY)")
-    parser.add_argument("--year", type=int, required=True, help="Year for data fetching")
-    parser.add_argument("--month", type=int, required=True, help="Month for data fetching")
+    # Removed --year and --month arguments
     parser.add_argument("--api-key", type=str, required=True, help="Alpha Vantage API key")
     parser.add_argument("--output-dir", type=str, required=True, help="Directory to save the output CSV file")
 

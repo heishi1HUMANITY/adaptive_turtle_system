@@ -177,6 +177,7 @@ def _blocking_data_collection_simulation(job_id: str, request_params: dict, job_
     """
     try:
         job_store[job_id]["status"] = "running"
+        time.sleep(0.1) # Add small delay
         # Simulate work using time.sleep
         time.sleep(5) # Simulate blocking I/O operation
         job_store[job_id]["status"] = "completed"

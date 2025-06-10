@@ -32,59 +32,127 @@ def fetch_forex_data(year, month, symbol, api_key):
         response = requests.get(url)
         response.raise_for_status()  # Raise an exception for HTTP errors
 
-        csv_raw_data = response.content.decode('utf-8')
+        response_text = response.content.decode('utf-8')
 
-        # Attempt to parse as JSON first to check for premium endpoint messages
         try:
-            json_response = json.loads(csv_raw_data)
-            if isinstance(json_response, dict) and "Information" in json_response:
-                information_message = str(json_response["Information"]) # Ensure it's a string
-                if "premium endpoint" in information_message.lower():
-                    print(f"  -> API Error: This is a premium endpoint. Subscription required for {symbol}.", file=sys.stderr)
-                    print(f"     API Response: {csv_raw_data[:1000]}", file=sys.stderr)
-                    return None
-                # Potentially other informational messages could be handled here if needed
-        except json.JSONDecodeError:
-            # Not a JSON response, or malformed JSON. Proceed to CSV checks/parsing.
-            pass
-
-        # Existing checks for common errors or empty data (if not JSON error)
-        if not csv_raw_data.strip() or \
-           'Error Message' in csv_raw_data or \
-           ('Information' in csv_raw_data and 'api call frequency' in csv_raw_data.lower()): # Check 'Information' for rate limits too
-            # The 'Information' check for rate limits might be redundant if json_response handled it,
-            # but kept for robustness if the JSON structure varies or for non-JSON info messages.
-            print(f"  -> {year}年{month}月のデータ取得に失敗、またはデータが存在しません（またはAPI制限）。", file=sys.stderr)
-            print(f"     API Response: {csv_raw_data[:1000]}", file=sys.stderr)
+            json_response = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            print(f"  -> Failed to parse API response as JSON: {e}", file=sys.stderr)
+            print(f"     API Response Snippet: {response_text[:1000]}", file=sys.stderr)
             return None
 
-        df = pd.read_csv(io.StringIO(csv_raw_data))
-
-        if df.empty:
-            print(f"  -> {year}年{month}月のデータは空です。", file=sys.stderr) # Corrected message
+        # Check for error messages within the JSON response itself
+        if isinstance(json_response, dict) and "Error Message" in json_response:
+            print(f"  -> API Error: {json_response['Error Message']}", file=sys.stderr)
+            # Print full response if it's an error message, as it might be short and informative
+            print(f"     Full API Response: {response_text}", file=sys.stderr)
             return None
 
-        df.rename(columns={'time': 'Timestamp', 'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close'}, inplace=True)
-        df['Volume'] = 0
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        # Check for "Information" messages (e.g., premium endpoint, API limits)
+        if isinstance(json_response, dict) and "Information" in json_response:
+            information_message = str(json_response["Information"])
+            # Check for premium endpoint message
+            if "premium endpoint" in information_message.lower():
+                print(f"  -> API Error: This is a premium endpoint. Subscription required for {symbol}.", file=sys.stderr)
+                print(f"     API Response: {response_text[:1000]}", file=sys.stderr)
+                return None
+            # Check for API call frequency limit message
+            if "api call frequency" in information_message.lower():
+                 print(f"  -> API Error: API call frequency limit reached. Message: {information_message}", file=sys.stderr)
+                 print(f"     API Response: {response_text[:1000]}", file=sys.stderr)
+                 return None
+            # Handle other informational messages that might indicate no data or other issues
+            # For example, if the "Information" message implies no data was found.
+            # This part might need refinement based on observed "Information" messages.
+            print(f"  -> API Information: {information_message}", file=sys.stderr)
+            # If an "Information" message is present, it often means no valid time series data will follow.
+            # Consider returning None unless specific "Information" messages are known to be benign.
+            print(f"     (Assuming this information means no data for {symbol} {year_month_str})")
+            return None
+
+
+        # Extract Meta Data
+        meta_data = json_response.get("Meta Data")
+        if not meta_data or not isinstance(meta_data, dict):
+            print(f"  -> API Error: 'Meta Data' not found or not in expected format in JSON response for {symbol} {year_month_str}.", file=sys.stderr)
+            print(f"     JSON Response Snippet: {str(json_response)[:1000]}", file=sys.stderr)
+            return None
+
+        # Determine the time series key (e.g., "Time Series (1min)")
+        # The interval used in the request is '1min'.
+        interval_from_meta = meta_data.get("4. Interval", "1min") # Default to 1min
+
+        # Construct possible keys. TIME_SERIES_INTRADAY can be used for FX by some,
+        # where AlphaVantage might use "Time Series FX (interval)"
+        # or for stocks "Time Series (interval)".
+        possible_ts_keys = [
+            f"Time Series ({interval_from_meta})",
+            f"Time Series FX ({interval_from_meta})", # More specific for FX if API uses it
+        ]
+
+        time_series_data = None
+        for key_to_try in possible_ts_keys:
+            if key_to_try in json_response:
+                time_series_data = json_response[key_to_try]
+                break
+
+        if not time_series_data or not isinstance(time_series_data, dict) or not time_series_data:
+            print(f"  -> API Error: Time series data not found or is empty in JSON response for {symbol} {year_month_str}. Tried keys: {possible_ts_keys}", file=sys.stderr)
+            print(f"     JSON Response Snippet: {str(json_response)[:1000]}", file=sys.stderr)
+            return None
+
+        # Convert time series data to DataFrame
+        df = pd.DataFrame.from_dict(time_series_data, orient='index')
+
+        # Rename columns
+        rename_map = {
+            '1. open': 'Open', '2. high': 'High',
+            '3. low': 'Low', '4. close': 'Close', '5. volume': 'Volume'
+        }
+        df.rename(columns=rename_map, inplace=True)
+
+        # Convert index to datetime (timestamps from API) and sort
+        df.index = pd.to_datetime(df.index)
+        df.sort_index(ascending=True, inplace=True) # Sort by timestamp ascending
+
+        # Reset index to make 'Timestamp' a column
+        df.reset_index(inplace=True)
+        df.rename(columns={'index': 'Timestamp'}, inplace=True)
+
+        # Ensure OHLC columns are numeric
+        ohlc_cols = ['Open', 'High', 'Low', 'Close']
+        for col in ohlc_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Drop rows where essential OHLC data conversion failed
+        df.dropna(subset=ohlc_cols, inplace=True)
+
+        # Ensure Volume column exists and is numeric, fill with 0 if not present or conversion fails
+        if 'Volume' not in df.columns:
+            df['Volume'] = 0
+        else:
+            df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce').fillna(0)
+
+        # Select and order final columns
         df = df[['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']]
 
-        # Print the number of records fetched to stdout
-        print(f"  -> {len(df)}件のデータを取得しました。")
+        if df.empty:
+            print(f"  -> Data for {symbol} {year_month_str} is empty after processing JSON.", file=sys.stderr)
+            return None
+
+        print(f"  -> {len(df)}件のデータをJSONから取得・処理しました。")
         return df
 
     except requests.exceptions.RequestException as e:
         print(f"  -> APIリクエスト中にエラーが発生しました: {e}", file=sys.stderr)
         return None
-    except pd.errors.EmptyDataError: # Specific error for pd.read_csv if data is empty after all
-        print(f"  -> CSVデータが空または不正です。APIから有効なデータが返されませんでした。", file=sys.stderr)
-        if 'csv_raw_data' in locals():
-             print(f"     Raw CSV Data Snippet: {csv_raw_data[:200]}", file=sys.stderr)
-        return None
-    except Exception as e:
-        print(f"  -> データ処理中に予期せぬエラーが発生しました: {e}", file=sys.stderr)
-        if 'csv_raw_data' in locals():
-             print(f"     Raw CSV Data Snippet (if available): {csv_raw_data[:200]}", file=sys.stderr)
+    # Removed pd.errors.EmptyDataError as CSV parsing is no longer the primary path.
+    # Other specific pandas errors could be caught here if necessary during DataFrame manipulation.
+    except Exception as e: # General catch-all for other unexpected errors during processing
+        print(f"  -> データ処理中に予期せぬエラーが発生しました ({type(e).__name__}): {e}", file=sys.stderr)
+        # If response_text is available, print a snippet. It might not be if error is pre-request.
+        if 'response_text' in locals():
+             print(f"     Original Response Text Snippet (if available): {response_text[:1000]}", file=sys.stderr)
         return None
 
 

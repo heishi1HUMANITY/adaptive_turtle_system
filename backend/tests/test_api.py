@@ -401,7 +401,7 @@ def test_stream_log_success(client: TestClient):
                 # If final_status_message_received is True, this is okay.
                 if not final_status_message_received:
                     # If disconnected before final message, check if job actually finished quickly
-                    status_resp = client.get(f"/api/backtest/status/{job_id}").json()
+                    status_resp = client.get(f"/api/data/status/{job_id}").json()
                     if status_resp["status"] == "completed":
                         final_status_message_received = True # Assume it finished and closed stream
                         completion_message_received = True

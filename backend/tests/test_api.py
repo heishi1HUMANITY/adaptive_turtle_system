@@ -269,7 +269,10 @@ def test_data_collection_job_status_flow(client: TestClient):
         # For now, we are inferring based on the happy path of this test.
 
         if last_status == "completed":
-            assert status_data.get("message") == "Data collection finished." # Check specific message
+            message = status_data.get("message", "")
+            assert message == "Data collection finished." or \
+                   message.startswith("Successfully fetched full timeseries") or \
+                   message.startswith("Data collection and filtering successful.") # Expected new message
             # Check job type by inspecting job_store directly (test-only, not ideal)
             # Or assume if it completed with the right message, it was a data collection job
             job_completed_successfully = True

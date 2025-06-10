@@ -2,6 +2,8 @@ import sys
 import os
 import uuid
 import asyncio # Ensure asyncio is imported
+import time # Import time module
+import threading # Add threading import
 import pandas as pd # Added import
 from datetime import datetime
 from typing import List, Dict, Optional, Any
@@ -170,21 +172,32 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
             "trade_log": None
         })
 
-async def run_datacollection_task(job_id: str, request_params: dict):
+def _blocking_data_collection_simulation(job_id: str, request_params: dict, job_store: Dict):
     """
-    Background task to simulate data collection.
+    Synchronous function to simulate blocking data collection.
     """
     try:
         job_store[job_id]["status"] = "running"
-        # Simulate data collection work
-        await asyncio.sleep(5) # Simulate I/O bound operation
+        time.sleep(0.1) # Add small delay
+        # Simulate work using time.sleep
+        time.sleep(5) # Simulate blocking I/O operation
         job_store[job_id]["status"] = "completed"
         job_store[job_id]["message"] = "Data collection finished."
     except Exception as e:
-        job_store[job_id].update({
-            "status": "failed",
-            "message": str(e)
-        })
+        job_store[job_id]["status"] = "failed"
+        job_store[job_id]["message"] = str(e)
+
+def manage_blocking_data_collection(job_id: str, request_params: dict):
+    """
+    Manages the blocking data collection simulation using a separate thread.
+    """
+    # job_store is global, _blocking_data_collection_simulation will access it.
+    thread = threading.Thread(
+        target=_blocking_data_collection_simulation,
+        args=(job_id, request_params, job_store), # Pass job_store here
+        daemon=True
+    )
+    thread.start()
 
 app = FastAPI()
 
@@ -230,8 +243,33 @@ async def start_data_collection(request: DataCollectionRequest, background_tasks
         "parameters": request.model_dump(),
         "message": "Data collection job initiated."
     }
-    background_tasks.add_task(run_datacollection_task, job_id, request.model_dump())
+    background_tasks.add_task(manage_blocking_data_collection, job_id, request.model_dump())
     return JobCreationResponse(job_id=job_id)
+
+
+@app.get("/api/data/status/{job_id}", response_model=JobStatusResponse)
+async def get_data_job_status(job_id: str):
+    job = job_store.get(job_id)
+    if not job or job.get("type") != "data_collection":
+        raise HTTPException(status_code=404, detail="Data collection job not found or job ID is not for a data collection task.")
+
+    status = job["status"]
+    message = job.get("message") # Get message set by the background task or initiator
+
+    # Provide more specific default messages if not set by the task
+    if not message:
+        if status == "completed":
+            message = "Data collection job completed successfully."
+        elif status == "pending":
+            message = "Data collection job is pending."
+        elif status == "running":
+            message = "Data collection job is currently running."
+        elif status == "failed":
+            message = "Data collection job failed." # Specific failure message should be in job.get("message")
+        else:
+            message = "Data collection job status unknown."
+
+    return JobStatusResponse(job_id=job_id, status=status, message=message)
 
 
 @app.get("/api/backtest/status/{job_id}", response_model=JobStatusResponse)
@@ -330,7 +368,7 @@ async def stream_log(websocket: WebSocket, job_id: str):
 
             if status == "running":
                 await websocket.send_text(f"LOG: Line {i+1} for job {job_id} (Status: {status})")
-                await asyncio.sleep(1)  # Wait 1 second
+                await asyncio.sleep(0.05)  # Wait 0.05 seconds
             elif status == "completed":
                 await websocket.send_text(f"INFO: Job {job_id} completed. {current_job_info.get('message', '')}")
                 break
@@ -339,7 +377,7 @@ async def stream_log(websocket: WebSocket, job_id: str):
                 break
             elif status == "pending":
                  await websocket.send_text(f"INFO: Job {job_id} is pending. Waiting for it to start...")
-                 await asyncio.sleep(1) # Wait for job to start
+                 await asyncio.sleep(0.05) # Wait for job to start
             else: # unknown status or job disappeared
                 await websocket.send_text(f"INFO: Job {job_id} status is {status}. Ending log stream.")
                 break

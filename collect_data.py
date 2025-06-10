@@ -28,8 +28,8 @@ def fetch_forex_data(year, month, symbol, api_key):
            'Error Message' in csv_raw_data or \
            ('Information' in csv_raw_data and 'API call frequency' in csv_raw_data):
             print(f"  -> {year}年{month}月のデータ取得に失敗、またはデータが存在しません。", file=sys.stderr)
-            api_response_snippet = csv_raw_data.splitlines()[0] if csv_raw_data.strip() else "Empty response"
-            print(f"     API Response: {api_response_snippet[:200]}", file=sys.stderr)
+            # api_response_snippet = csv_raw_data.splitlines()[0] if csv_raw_data.strip() else "Empty response" # Old line
+            print(f"     API Response: {csv_raw_data[:1000]}", file=sys.stderr) # Modified line
             return None
 
         df = pd.read_csv(io.StringIO(csv_raw_data))

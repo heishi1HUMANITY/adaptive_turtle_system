@@ -632,6 +632,27 @@ def run_strategy(historical_data_dict: Dict[str, pd.DataFrame], initial_capital:
             "final_capital" (float): The final cash capital in the portfolio.
             "portfolio_summary" (dict): Optional dictionary with more summary statistics.
     """
+    # --- DEBUGGING: Log historical_data_dict details ---
+    print("DEBUG TRADING_LOGIC: Entering run_strategy")
+    print(f"DEBUG TRADING_LOGIC: historical_data_dict keys: {list(historical_data_dict.keys())}")
+    for symbol, df in historical_data_dict.items():
+        print(f"DEBUG TRADING_LOGIC: Data for symbol: {symbol}")
+        if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+            print(f"DEBUG TRADING_LOGIC:   Number of rows: {len(df)}")
+            if isinstance(df.index, pd.DatetimeIndex):
+                print(f"DEBUG TRADING_LOGIC:   First timestamp: {df.index.min()}")
+                print(f"DEBUG TRADING_LOGIC:   Last timestamp: {df.index.max()}")
+            else:
+                print("DEBUG TRADING_LOGIC:   DataFrame index is not a DatetimeIndex.")
+        elif df is None:
+            print("DEBUG TRADING_LOGIC:   DataFrame is None.")
+        elif not isinstance(df, pd.DataFrame):
+            print(f"DEBUG TRADING_LOGIC:   Object is not a DataFrame, it's a {type(df)}.")
+        elif df.empty:
+            print("DEBUG TRADING_LOGIC:   DataFrame is empty.")
+    print("DEBUG TRADING_LOGIC: --- End of historical_data_dict logging ---")
+    # --- End of DEBUGGING ---
+
     portfolio_manager = PortfolioManager(initial_capital=initial_capital, config=config)
     equity_curve = [] # Stores (timestamp, equity) tuples
 

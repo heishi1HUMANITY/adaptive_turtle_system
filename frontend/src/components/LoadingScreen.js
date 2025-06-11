@@ -26,13 +26,13 @@ const LoadingScreen = () => {
         }
         const data = await response.json();
 
-        setStatus(data.job_status); // Assuming backend returns { job_id: "...", job_status: "...", message: "..." }
+        setStatus(data.status); // Corrected to use data.status from backend
         // setProgress(data.progress || 0); // If backend provides progress
 
-        if (data.job_status === 'completed') {
+        if (data.status === 'completed') { // Corrected to use data.status
           clearInterval(pollInterval);
           navigate('/results', { state: { jobId: jobId } });
-        } else if (data.job_status === 'failed') {
+        } else if (data.status === 'failed') { // Corrected to use data.status
           clearInterval(pollInterval);
           setError(data.message || 'The backtest process failed.');
         }

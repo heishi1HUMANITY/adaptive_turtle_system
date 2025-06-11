@@ -68,12 +68,12 @@ function DataManagementPage() {
         // Keep existing log message for starting update
         setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ファイルリストを更新中...`]);
         try {
-            const response = await fetch('/api/data/files');
+            const response = await fetch('http://localhost:8000/api/data/files');
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const data = await response.json();
-            setOutputFileList(data);
+            setOutputFileList(data.files || []); // Correctly extract the 'files' array, with a fallback
             setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: ファイルリストを更新しました。`]);
         } catch (error) {
             console.error("Failed to fetch file list:", error);
@@ -118,17 +118,19 @@ function DataManagementPage() {
         }
 
         const collectionParams = {
-            api_key: storedApiKey,
-            currency_pair: currencyPair,
-            timeframe: 'M1', // Assuming M1 is fixed as per UI
-            start_date: `${startYear}-${String(startMonth).padStart(2, '0')}-01`,
-            end_date: `${endYear}-${String(endMonth).padStart(2, '0')}-01`,
+            apiKey: storedApiKey, // Renamed from api_key
+            symbol: currencyPair, // Renamed from currency_pair
+            startYear: startYear,
+            startMonth: startMonth,
+            endYear: endYear,
+            endMonth: endMonth,
+            // timeframe, start_date, and end_date are removed
         };
 
-        setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集リクエスト: ${JSON.stringify(Omit(collectionParams, ['api_key']))}`]);
+        setLogMessages(prevMessages => [...prevMessages, `> ${new Date().toLocaleTimeString()}: データ収集リクエスト: ${JSON.stringify(Omit(collectionParams, ['apiKey']))}`]);
 
         try {
-            const response = await fetch('/api/data/collect', {
+            const response = await fetch('http://localhost:8000/api/data/collect', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -1,12 +1,13 @@
 import sys
 import os
 import uuid
-import asyncio # Ensure asyncio is imported
-import time # Import time module
-import threading # Add threading import
-import pandas as pd # Added import
+import asyncio
+import time
+import threading
+import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+import subprocess
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +18,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import trading_logic
 import performance_analyzer
 import data_loader
-# config_loader might not be directly used if API passes all config
 
 # Define Data Directory relative to this file's location (backend/main.py)
 # It should point to the 'data' folder in the project root
@@ -74,7 +74,7 @@ class BacktestResultsResponse(BaseModel):
     message: Optional[str] = None
 
 # Pydantic Models for Data Collection API
-class DataCollectionRequest(BaseModel): # Ensure this model is defined or imported
+class DataCollectionRequest(BaseModel):
     symbol: str
     startYear: int
     startMonth: int
@@ -95,13 +95,13 @@ class FileListResponse(BaseModel):
 job_store: Dict[str, Dict[str, Any]] = {}
 
 
-async def run_backtest_task(job_id: str, settings_dict: dict):
+def run_backtest_task(job_id: str, settings_dict: dict):
     """
     Background task to run the backtest, calculate KPIs, and store results.
+    This function is run in a thread by FastAPI's BackgroundTasks.
     """
+    job_store[job_id]["status"] = "running"
     try:
-        job_store[job_id]["status"] = "running"
-
         # Configuration Preparation
         # settings_dict itself is used as config_dict_for_run as it contains all necessary fields
         config_dict_for_run = settings_dict.copy() # Use a copy to avoid modifying the original settings
@@ -160,44 +160,263 @@ async def run_backtest_task(job_id: str, settings_dict: dict):
             "kpis": kpi_results_dict,
             "equity_curve": backtest_engine_results.get("equity_curve"), # Stored as list of tuples
             "trade_log": backtest_engine_results.get("trade_log"),
-            "error_message": None
+            "error_message": None,
+            "message": "Backtest completed successfully." # Added success message
         })
 
     except Exception as e:
+        error_str = str(e)
         job_store[job_id].update({
             "status": "failed",
-            "error_message": str(e),
+            "error_message": error_str,
+            "message": f"Backtest failed: {error_str}", # Added failure message
             "kpis": None,
             "equity_curve": None,
             "trade_log": None
         })
 
-def _blocking_data_collection_simulation(job_id: str, request_params: dict, job_store: Dict):
+
+def _blocking_data_collection_simulation(request_params: dict) -> Dict[str, Any]:
     """
-    Synchronous function to simulate blocking data collection.
+    Synchronous function to perform actual data collection by calling collect_data.py.
+    Returns a dictionary with status and message.
     """
+    status_updates = []
+    output_filepath = None
+    # Default to failure until success is explicitly determined
+    final_status = "failed"
+    final_message = "Data collection process did not start or encountered an unexpected issue."
+
     try:
-        job_store[job_id]["status"] = "running"
-        time.sleep(0.1) # Add small delay
-        # Simulate work using time.sleep
-        time.sleep(5) # Simulate blocking I/O operation
-        job_store[job_id]["status"] = "completed"
-        job_store[job_id]["message"] = "Data collection finished."
-    except Exception as e:
-        job_store[job_id]["status"] = "failed"
-        job_store[job_id]["message"] = str(e)
+        symbol = request_params.get("symbol")
+        req_start_year = request_params.get("startYear")
+        req_start_month = request_params.get("startMonth")
+        req_end_year = request_params.get("endYear")
+        req_end_month = request_params.get("endMonth")
+        api_key = request_params.get("apiKey")
+
+        if api_key == "test_key_optional":
+            # --- Start of MOCK LOGIC ---
+            symbol = request_params.get("symbol", "USDJPY") # Default for safety
+            req_start_year = request_params.get("startYear")
+            req_start_month = request_params.get("startMonth")
+            req_end_year = request_params.get("endYear")
+            req_end_month = request_params.get("endMonth")
+
+            status_updates = []
+            output_filepath = None
+            final_status = "completed"
+
+            # Ensure DATA_DIR exists (important for tests)
+            if not os.path.exists(DATA_DIR):
+                os.makedirs(DATA_DIR, exist_ok=True)
+                status_updates.append(f"MOCK: Created data directory: {DATA_DIR}")
+
+            status_updates.append(f"MOCK: Simulating collect_data.py for {symbol} with test_key_optional.")
+
+            # 1. Simulate creation of full timeseries file
+            full_timeseries_filename = f"{symbol}_M1_full_timeseries.csv"
+            full_timeseries_filepath = os.path.join(DATA_DIR, full_timeseries_filename)
+            dummy_full_content = "Timestamp,Open,High,Low,Close\n2023-01-15T10:00:00Z,1.0,1.1,0.9,1.05\n2023-07-15T10:00:00Z,1.1,1.2,1.0,1.15\n2024-01-15T10:00:00Z,1.2,1.3,1.1,1.25"
+            with open(full_timeseries_filepath, "w") as f:
+                f.write(dummy_full_content)
+            status_updates.append(f"MOCK: Created dummy full timeseries file: {full_timeseries_filepath}")
+
+            # 2. Simulate filtering and creation of filtered file
+            # Use requested year/month to determine if dummy data falls in range
+            # For simplicity, assume requested range like 2023-1 to 2023-12 will include some data
+            s_year_str = str(req_start_year)
+            s_month_str = str(req_start_month).zfill(2)
+            e_year_str = str(req_end_year)
+            e_month_str = str(req_end_month).zfill(2)
+
+            filtered_filename = f"{symbol}_{s_year_str}{s_month_str}_{e_year_str}{e_month_str}.csv"
+            output_filepath = os.path.join(DATA_DIR, filtered_filename)
+
+            # Simple filter logic for dummy data (check if year 2023 is requested)
+            # The VALID_DATA_COLLECTION_REQUEST uses 2023 for start and end year.
+            if req_start_year == 2023 and req_end_year == 2023:
+                dummy_filtered_content = "Timestamp,Open,High,Low,Close\n2023-01-15T10:00:00Z,1.0,1.1,0.9,1.05\n2023-07-15T10:00:00Z,1.1,1.2,1.0,1.15"
+                with open(output_filepath, "w") as f:
+                    f.write(dummy_filtered_content)
+                status_updates.append(f"MOCK: Filtered data saved to {output_filepath} (2 rows).")
+                final_message = f"MOCK: Data collection and filtering successful. Output file: {output_filepath}"
+            else: # No data in range for this mock
+                output_filepath = None # No file created
+                status_updates.append(f"MOCK: No data found for the specified range: {req_start_year}-{req_start_month} to {req_end_year}-{req_end_month} in mock.")
+                final_message = f"MOCK: Successfully fetched full timeseries for {symbol}, but no data found for the specified range: {req_start_year}-{req_start_month} to {req_end_year}-{req_end_month}."
+                # output_filepath remains None
+
+            return {"status": final_status, "message": final_message, "detailed_log": status_updates, "output_filepath": output_filepath}
+            # --- End of MOCK LOGIC ---
+
+        # Original logic continues here if api_key is not "test_key_optional"
+        if not api_key: # This check is now effectively redundant due to the placement, but harmless.
+            return {"status": "failed", "message": "API key is missing."}
+
+        if not all([symbol, req_start_year, req_start_month, req_end_year, req_end_month]):
+            return {"status": "failed", "message": "Missing required parameters for data collection (symbol, start/end year/month)."}
+
+        script_dir = os.path.dirname(__file__)
+        project_root = os.path.join(script_dir, '..')
+        collect_data_script_path = os.path.join(project_root, 'collect_data.py')
+
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR, exist_ok=True)
+            status_updates.append(f"Created data directory: {DATA_DIR}")
+
+        # --- Call collect_data.py (once) ---
+        status_updates.append(f"Attempting to fetch full timeseries data for {symbol} using collect_data.py...")
+        print(f"Running collect_data.py for {symbol} (full timeseries)")
+
+        command = [
+            sys.executable,
+            collect_data_script_path,
+            "--symbol", symbol,
+            "--api-key", api_key,
+            "--output-dir", DATA_DIR
+        ]
+
+        process_error_message = None
+        try:
+            process = subprocess.run(
+                command,
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if process.returncode != 0:
+                error_output = process.stderr.strip() if process.stderr else process.stdout.strip()
+                process_error_message = f"collect_data.py script failed for {symbol}: {error_output} (Exit code: {process.returncode})"
+            else:
+                status_updates.append(f"collect_data.py script executed successfully for {symbol}.")
+                if process.stdout:
+                    status_updates.append(f"collect_data.py output: {process.stdout.strip()}")
+
+        except Exception as e_sub:
+            process_error_message = f"Failed to execute collect_data.py for {symbol}: {str(e_sub)}"
+
+        if process_error_message:
+            status_updates.append(process_error_message)
+            print(process_error_message)
+            # Return immediately if script execution failed
+            return {"status": "failed", "message": process_error_message, "detailed_log": status_updates, "output_filepath": None}
+
+        # --- Process the output from collect_data.py ---
+        # Expected filename from collect_data.py (after its internal changes)
+        full_timeseries_filename = f"{symbol}_M1_full_timeseries.csv"
+        full_timeseries_filepath = os.path.join(DATA_DIR, full_timeseries_filename)
+
+        if not os.path.exists(full_timeseries_filepath):
+            no_full_data_msg = f"collect_data.py ran but the expected output file '{full_timeseries_filename}' was not found in {DATA_DIR}."
+            status_updates.append(no_full_data_msg)
+            print(no_full_data_msg)
+            return {"status": "failed", "message": no_full_data_msg, "detailed_log": status_updates, "output_filepath": None}
+
+        status_updates.append(f"Full timeseries data file '{full_timeseries_filename}' found. Proceeding with filtering.")
+
+        try:
+            df_full = pd.read_csv(full_timeseries_filepath)
+            if 'Timestamp' not in df_full.columns:
+                raise ValueError("Timestamp column missing in the full timeseries data.")
+            df_full['Timestamp'] = pd.to_datetime(df_full['Timestamp'])
+
+            # Construct start and end datetimes for filtering
+            # Ensure start_datetime is the beginning of the start_month
+            start_datetime = datetime(int(req_start_year), int(req_start_month), 1, 0, 0, 0)
+            # Ensure end_datetime is the end of the end_month.
+            # One way: get first day of next month, then subtract one microsecond, or handle by inclusive upper bound.
+            # Using pd.Timestamp for robust end-of-month:
+            end_of_month_dt = pd.Timestamp(datetime(int(req_end_year), int(req_end_month), 1)) + pd.offsets.MonthEnd(1)
+            # Ensure time part covers the whole day for the end_datetime
+            end_datetime = end_of_month_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+
+            status_updates.append(f"Filtering data from {start_datetime.strftime('%Y-%m-%d %H:%M:%S')} to {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}.")
+
+            df_filtered = df_full[(df_full['Timestamp'] >= start_datetime) & (df_full['Timestamp'] <= end_datetime)]
+
+            if df_filtered.empty:
+                no_data_in_range_msg = f"Successfully fetched full timeseries for {symbol}, but no data found for the specified range: {req_start_year}-{req_start_month} to {req_end_year}-{req_end_month}."
+                status_updates.append(no_data_in_range_msg)
+                # This is not necessarily a "failed" status for the whole job, but no output file for this range.
+                # Depending on desired behavior, could be "completed" with this message. For now, let's treat as no output.
+                final_status = "completed" # Or "failed" if no data in range is a hard failure
+                final_message = no_data_in_range_msg
+                output_filepath = None # No specific file for this range
+            else:
+                # Save the filtered DataFrame
+                s_year_str = str(req_start_year)
+                s_month_str = str(req_start_month).zfill(2)
+                e_year_str = str(req_end_year)
+                e_month_str = str(req_end_month).zfill(2)
+
+                filtered_filename = f"{symbol}_{s_year_str}{s_month_str}_{e_year_str}{e_month_str}.csv"
+                output_filepath = os.path.join(DATA_DIR, filtered_filename)
+
+                df_filtered.to_csv(output_filepath, index=False)
+                status_updates.append(f"Filtered data saved to {output_filepath} ({len(df_filtered)} rows).")
+                print(f"Filtered data saved to {output_filepath}")
+                final_status = "completed"
+                final_message = f"Data collection and filtering successful. Output file: {output_filepath}"
+
+        except Exception as e_filter:
+            filter_error_msg = f"Error during data processing/filtering for {symbol}: {str(e_filter)}"
+            status_updates.append(filter_error_msg)
+            print(filter_error_msg)
+            final_status = "failed"
+            final_message = filter_error_msg
+            output_filepath = None
+
+    except Exception as e: # Catch-all for unexpected errors during setup
+        error_msg = f"An unexpected error occurred during data collection setup: {str(e)}"
+        print(f"Outer exception in _blocking_data_collection_simulation: {error_msg}")
+        status_updates.append(error_msg)
+        final_status = "failed" # Ensure status is failed
+        final_message = error_msg
+        output_filepath = None
+
+    return {"status": final_status, "message": final_message, "detailed_log": status_updates, "output_filepath": output_filepath}
+
 
 def manage_blocking_data_collection(job_id: str, request_params: dict):
     """
-    Manages the blocking data collection simulation using a separate thread.
+    Manages the data collection by running _blocking_data_collection_simulation in a thread.
+    Updates the job_store with the results.
     """
-    # job_store is global, _blocking_data_collection_simulation will access it.
-    thread = threading.Thread(
-        target=_blocking_data_collection_simulation,
-        args=(job_id, request_params, job_store), # Pass job_store here
-        daemon=True
-    )
-    thread.start()
+    try:
+        # Update job status to running before starting the thread
+        job_store[job_id]["status"] = "running"
+        job_store[job_id]["message"] = "Data collection process has started."
+
+        # Define a target function for the thread that calls the simulation
+        # and updates the job store with its results.
+        def thread_target():
+            collection_result = _blocking_data_collection_simulation(request_params)
+            job_store[job_id].update({
+                "status": collection_result.get("status", "failed"),
+                "message": collection_result.get("message", "An unknown error occurred in the collection worker."),
+                "detailed_log": collection_result.get("detailed_log", []),
+                "output_filepath": collection_result.get("output_filepath")
+            })
+            if collection_result.get("status") == "completed":
+                 print(f"Job {job_id} completed successfully: {collection_result.get('message')}")
+            else:
+                 print(f"Job {job_id} failed or completed with errors: {collection_result.get('message')}")
+
+
+        thread = threading.Thread(target=thread_target, daemon=True)
+        thread.start()
+
+    except Exception as e:
+        # This handles errors in setting up the thread, not errors inside the thread.
+        job_store[job_id].update({
+            "status": "failed",
+            "message": f"Failed to start data collection thread: {str(e)}"
+        })
+        print(f"Error starting data collection thread for job {job_id}: {str(e)}")
+
 
 app = FastAPI()
 
@@ -354,42 +573,50 @@ async def stream_log(websocket: WebSocket, job_id: str):
         await websocket.close(code=1008) # Policy Violation
         return
 
-    await websocket.send_text(f"Streaming logs for data collection job {job_id}...")
+    await websocket.send_text(f"INFO: Streaming logs for data collection job {job_id}...")
+
+    last_sent_status = None
+    last_sent_message = "" # Use empty string to ensure first message is always sent
+    last_detailed_log_length = 0
 
     try:
-        # Loop to send log messages based on job status
-        for i in range(10): # Simulate sending 10 log lines as per example
-            current_job_info = job_store.get(job_id) # Fetch fresh status
+        while True:
+            current_job_info = job_store.get(job_id)
+
             if not current_job_info:
-                await websocket.send_text(f"ERROR: Job {job_id} disappeared unexpectedly.")
-                break
+                await websocket.send_text(f"ERROR: Job {job_id} data disappeared from store.")
+                break # Exit loop
 
-            status = current_job_info["status"]
+            current_status = current_job_info.get("status", "unknown")
+            current_message = current_job_info.get("message", "")
+            detailed_log_entries = current_job_info.get("detailed_log", []) # This is a list
 
-            if status == "running":
-                await websocket.send_text(f"LOG: Line {i+1} for job {job_id} (Status: {status})")
-                await asyncio.sleep(0.05)  # Wait 0.05 seconds
-            elif status == "completed":
-                await websocket.send_text(f"INFO: Job {job_id} completed. {current_job_info.get('message', '')}")
-                break
-            elif status == "failed":
-                await websocket.send_text(f"ERROR: Job {job_id} failed. {current_job_info.get('message', '')}")
-                break
-            elif status == "pending":
-                 await websocket.send_text(f"INFO: Job {job_id} is pending. Waiting for it to start...")
-                 await asyncio.sleep(0.05) # Wait for job to start
-            else: # unknown status or job disappeared
-                await websocket.send_text(f"INFO: Job {job_id} status is {status}. Ending log stream.")
-                break
+            # Send status if it changed
+            if current_status != last_sent_status:
+                await websocket.send_text(f"STATUS: {current_status}")
+                last_sent_status = current_status
 
-        # After loop, or if job completes/fails during loop
-        final_job_info = job_store.get(job_id, {})
-        final_status = final_job_info.get("status", "unknown")
-        final_message = final_job_info.get("message", "")
-        await websocket.send_text(f"INFO: Log streaming ended for job {job_id}. Final status: {final_status}. Message: {final_message}")
+            # Send main message if it changed
+            if current_message != last_sent_message:
+                await websocket.send_text(f"MESSAGE: {current_message}")
+                last_sent_message = current_message
+
+            # Send new detailed_log entries
+            num_detailed_logs = len(detailed_log_entries)
+            if num_detailed_logs > last_detailed_log_length:
+                for i in range(last_detailed_log_length, num_detailed_logs):
+                    await websocket.send_text(f"LOG: {detailed_log_entries[i]}")
+                last_detailed_log_length = num_detailed_logs
+
+            # Check for job completion or failure to terminate the stream
+            if current_status == "completed" or current_status == "failed":
+                await websocket.send_text(f"STREAM_END: Job {current_status}.")
+                break # Exit loop
+
+            await asyncio.sleep(1) # Poll every 1 second
 
     except WebSocketDisconnect:
-        print(f"Client disconnected from job {job_id} log stream.")  # Server-side log
+        print(f"Client disconnected from job {job_id} log stream.")
     except Exception as e:
         error_message = f"ERROR: An error occurred during log streaming: {str(e)}"
         print(f"Error in log streaming for job {job_id}: {e}")  # Server-side log

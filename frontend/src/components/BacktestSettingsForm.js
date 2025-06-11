@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import FileUpload from './FileUpload';
 import DateRangePicker from './DateRangePicker';
 import NumericInput from './NumericInput';
 import ExecutionButton from './ExecutionButton';
@@ -8,7 +7,9 @@ import ResetButton from './ResetButton';
 
 const BacktestSettingsForm = () => {
   const navigate = useNavigate();
-  const [dataFile, setDataFile] = useState(null);
+  const [availableDataFiles, setAvailableDataFiles] = useState([]);
+  const [selectedDataFile, setSelectedDataFile] = useState('');
+  const [dataFilesError, setDataFilesError] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [initialCapital, setInitialCapital] = useState(1000000);
@@ -29,6 +30,34 @@ const BacktestSettingsForm = () => {
   const [riskPercentageError, setRiskPercentageError] = useState('');
   const [submitError, setSubmitError] = useState(null);
 
+  useEffect(() => {
+    const fetchAvailableFiles = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/data/files');
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to fetch data files: ${response.status} ${errorText}`);
+        }
+        const data = await response.json();
+        if (data.files && data.files.length > 0) {
+          setAvailableDataFiles(data.files.map(file => file.name));
+          setSelectedDataFile(data.files[0].name); // Select the first file by default
+          setDataFilesError('');
+        } else {
+          setAvailableDataFiles([]);
+          setSelectedDataFile('');
+          setDataFilesError('No data files available on the server.');
+        }
+      } catch (error) {
+        // console.error('Error fetching data files:', error); // Keep this for actual debugging if needed
+        setDataFilesError(`Error fetching data files: ${error.message}`);
+        setAvailableDataFiles([]);
+        setSelectedDataFile('');
+      }
+    };
+    fetchAvailableFiles();
+  }, []);
+
   const validateNumericInput = (value, errorSetter, fieldName) => {
     if (value === '' || isNaN(Number(value))) {
       errorSetter(`${fieldName} must be a valid number.`);
@@ -41,11 +70,6 @@ const BacktestSettingsForm = () => {
     }
     errorSetter('');
     return true;
-  };
-
-  const handleFileChange = (file) => {
-    setDataFile(file);
-    setSubmitError(null);
   };
 
   const handleStartDateChange = (date) => {
@@ -74,30 +98,33 @@ const BacktestSettingsForm = () => {
       return; // Stop execution if any validation fails
     }
 
+    if (!selectedDataFile) {
+      setSubmitError('Please select a data file for the backtest.');
+      // setIsExecuting(false); // Not needed here as it's not true yet
+      return;
+    }
+
     setIsExecuting(true);
 
     const payload = {
       markets: ["default_market"], // Hardcoded as per instructions
-      start_date: startDate,
-      end_date: endDate,
       initial_capital: Number(initialCapital),
-      spread: Number(spread),
       entry_donchian_period: Number(entryPeriod),
-      take_profit_long_exit_period: Number(exitPeriod), // Mapped from exitPeriod
-      take_profit_short_exit_period: Number(exitPeriod), // Mapped from exitPeriod
+      take_profit_long_exit_period: Number(exitPeriod),
+      take_profit_short_exit_period: Number(exitPeriod),
       atr_period: Number(atrPeriod),
-      stop_loss_atr_multiplier: 3.0, // Sensible default
-      risk_per_trade: Number(riskPercentage) / 100, // Convert percentage to fraction
-      total_portfolio_risk_limit: 0.1, // Sensible default
-      slippage_pips: 0.5, // Sensible default
+      stop_loss_atr_multiplier: 3.0, // Default, not in form
+      risk_per_trade: Number(riskPercentage) / 100,
+      total_portfolio_risk_limit: 0.1, // Default, not in form
+      slippage_pips: Number(spread), // Using spread state for slippage_pips as it's more aligned
       commission_per_lot: Number(commission),
-      pip_point_value: {"default_market": 0.01}, // Sensible default
-      lot_size: {"default_market": 100000}, // Sensible default
-      max_units_per_market: {"default_market": 10} // Sensible default
-      // dataFile is intentionally omitted as the backend uses a fixed file for now.
+      pip_point_value: {"default_market": 0.01}, // Default
+      lot_size: {"default_market": 100000}, // Default
+      max_units_per_market: {"default_market": 10}, // Default
+      data_file_name: selectedDataFile,
     };
 
-    console.log("Executing backtest with parameters:", payload);
+    // console.log("Executing backtest with parameters:", payload);
 
     fetch('http://localhost:8000/api/backtest/run', {
       method: 'POST',
@@ -112,32 +139,29 @@ const BacktestSettingsForm = () => {
       } else {
         // Attempt to get more detailed error from backend
         const errorData = await response.text();
-        console.error('Error starting backtest job:', response.status, errorData);
+        // console.error('Error starting backtest job:', response.status, errorData);
         setSubmitError(`バックテストの開始に失敗しました。サーバーエラー: ${response.status} - ${errorData || '詳細不明'}`);
-        // Removed alert(`Error starting backtest: ${response.status} - ${errorData || 'Unknown error'}`);
         throw new Error(`Backend error: ${response.status}`);
       }
     })
     .then(data => {
       if (data.job_id) {
-        console.log('Backtest job started successfully. Job ID:', data.job_id);
+        // console.log('Backtest job started successfully. Job ID:', data.job_id);
         navigate(`/loading/${data.job_id}`, { state: { jobId: data.job_id } });
       } else {
         // This case should ideally be caught by !response.ok, but as a fallback
-        console.error('Failed to start backtest job: No job_id received', data);
+        // console.error('Failed to start backtest job: No job_id received', data);
         setSubmitError('バックテストの開始に失敗しました。サーバーから有効なJob IDが返されませんでした。');
-        // Removed alert('Failed to start backtest: No job ID received.');
       }
     })
     .catch(error => {
       // Handles network errors or errors thrown from the .then() blocks
-      console.error('Fetch error:', error);
+      // console.error('Fetch error:', error);
       if (error.message.startsWith('Backend error:')) {
         // Error already set by the .then block for !response.ok
         // No need to call setSubmitError here again if it's a re-thrown backend error
       } else {
          setSubmitError('バックテストの開始に失敗しました。ネットワーク接続を確認するか、サーバーが起動しているか確認してください。');
-        // Removed alert for generic fetch error, now handled by submitError state
       }
     })
     .finally(() => {
@@ -153,7 +177,8 @@ const BacktestSettingsForm = () => {
     setExitPeriod(10);
     setAtrPeriod(20);
     setRiskPercentage(1.0);
-    setDataFile(null);
+    setSelectedDataFile(availableDataFiles.length > 0 ? availableDataFiles[0] : '');
+    setDataFilesError('');
     setStartDate('');
     setEndDate('');
 
@@ -179,7 +204,28 @@ const BacktestSettingsForm = () => {
 
       <h2>1. データと期間設定</h2>
       <div>
-        <FileUpload onFileSelect={handleFileChange} disabled={isExecuting} />
+        <div>
+          <label htmlFor="dataFileInput">Data File:</label>
+          <select
+            id="dataFileInput"
+            value={selectedDataFile}
+            onChange={(e) => {
+              setSelectedDataFile(e.target.value);
+              setDataFilesError(''); // Clear error when user selects a file
+              setSubmitError(null); // Clear general submit error as well
+            }}
+            disabled={isExecuting || availableDataFiles.length === 0}
+          >
+            {availableDataFiles.length === 0 && !dataFilesError && <option value="">Loading files...</option>}
+            {dataFilesError && <option value="">Failed to load files</option>}
+            {availableDataFiles.map((fileName) => (
+              <option key={fileName} value={fileName}>
+                {fileName}
+              </option>
+            ))}
+          </select>
+          {dataFilesError && <p style={{ color: 'red' }}>{dataFilesError}</p>}
+        </div>
         <DateRangePicker
           startDate={startDate}
           endDate={endDate}

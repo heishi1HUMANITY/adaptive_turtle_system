@@ -39,6 +39,7 @@ class BacktestSettings(BaseModel):
     pip_point_value: Dict[str, float]
     lot_size: Dict[str, int]
     max_units_per_market: Dict[str, int]
+    data_file_name: Optional[str] = None
 
 class JobCreationResponse(BaseModel):
     job_id: str
@@ -107,9 +108,24 @@ def run_backtest_task(job_id: str, settings_dict: dict):
         config_dict_for_run = settings_dict.copy() # Use a copy to avoid modifying the original settings
 
         # Data Loading
-        # Path adjusted to be relative to the backend/main.py file,
-        # assuming historical_data.csv is in the project root.
-        raw_data_df = data_loader.load_csv_data('historical_data.csv')
+        data_file_name = settings_dict.get("data_file_name")
+        data_file_path_to_load: str
+
+        if data_file_name:
+            data_file_path_to_load = os.path.join(DATA_DIR, data_file_name)
+            # Consider adding a log message here, e.g., using a proper logger if available
+            # print(f"INFO: Using data file specified in settings: {data_file_path_to_load}") # Basic print logging
+            if not os.path.exists(data_file_path_to_load):
+                raise ValueError(f"Specified data file does not exist: {data_file_path_to_load}")
+        else:
+            default_file_name = 'historical_data.csv'
+            data_file_path_to_load = os.path.join(DATA_DIR, default_file_name)
+            # Consider adding a warning log message here
+            # print(f"WARNING: No data_file_name provided in settings. Falling back to default: {data_file_path_to_load}. This may be deprecated in the future.")
+            # Optional: Check if default file exists, though current structure implies it should or data_loader handles it.
+
+
+        raw_data_df = data_loader.load_csv_data(data_file_path_to_load)
 
         if raw_data_df.empty:
             raise ValueError("Loaded data is empty.")
@@ -267,7 +283,7 @@ def _blocking_data_collection_simulation(request_params: dict) -> Dict[str, Any]
 
         # --- Call collect_data.py (once) ---
         status_updates.append(f"Attempting to fetch full timeseries data for {symbol} using collect_data.py...")
-        print(f"Running collect_data.py for {symbol} (full timeseries)")
+        # print(f"Running collect_data.py for {symbol} (full timeseries)")
 
         command = [
             sys.executable,
@@ -299,7 +315,7 @@ def _blocking_data_collection_simulation(request_params: dict) -> Dict[str, Any]
 
         if process_error_message:
             status_updates.append(process_error_message)
-            print(process_error_message)
+            # print(process_error_message)
             # Return immediately if script execution failed
             return {"status": "failed", "message": process_error_message, "detailed_log": status_updates, "output_filepath": None}
 
@@ -311,7 +327,7 @@ def _blocking_data_collection_simulation(request_params: dict) -> Dict[str, Any]
         if not os.path.exists(full_timeseries_filepath):
             no_full_data_msg = f"collect_data.py ran but the expected output file '{full_timeseries_filename}' was not found in {DATA_DIR}."
             status_updates.append(no_full_data_msg)
-            print(no_full_data_msg)
+            # print(no_full_data_msg)
             return {"status": "failed", "message": no_full_data_msg, "detailed_log": status_updates, "output_filepath": None}
 
         status_updates.append(f"Full timeseries data file '{full_timeseries_filename}' found. Proceeding with filtering.")
@@ -357,21 +373,21 @@ def _blocking_data_collection_simulation(request_params: dict) -> Dict[str, Any]
 
                 df_filtered.to_csv(output_filepath, index=False)
                 status_updates.append(f"Filtered data saved to {output_filepath} ({len(df_filtered)} rows).")
-                print(f"Filtered data saved to {output_filepath}")
+                # print(f"Filtered data saved to {output_filepath}")
                 final_status = "completed"
                 final_message = f"Data collection and filtering successful. Output file: {output_filepath}"
 
         except Exception as e_filter:
             filter_error_msg = f"Error during data processing/filtering for {symbol}: {str(e_filter)}"
             status_updates.append(filter_error_msg)
-            print(filter_error_msg)
+            # print(filter_error_msg)
             final_status = "failed"
             final_message = filter_error_msg
             output_filepath = None
 
     except Exception as e: # Catch-all for unexpected errors during setup
         error_msg = f"An unexpected error occurred during data collection setup: {str(e)}"
-        print(f"Outer exception in _blocking_data_collection_simulation: {error_msg}")
+        # print(f"Outer exception in _blocking_data_collection_simulation: {error_msg}")
         status_updates.append(error_msg)
         final_status = "failed" # Ensure status is failed
         final_message = error_msg
@@ -400,10 +416,10 @@ def manage_blocking_data_collection(job_id: str, request_params: dict):
                 "detailed_log": collection_result.get("detailed_log", []),
                 "output_filepath": collection_result.get("output_filepath")
             })
-            if collection_result.get("status") == "completed":
-                 print(f"Job {job_id} completed successfully: {collection_result.get('message')}")
-            else:
-                 print(f"Job {job_id} failed or completed with errors: {collection_result.get('message')}")
+            # if collection_result.get("status") == "completed":
+            #      print(f"Job {job_id} completed successfully: {collection_result.get('message')}")
+            # else:
+            #      print(f"Job {job_id} failed or completed with errors: {collection_result.get('message')}")
 
 
         thread = threading.Thread(target=thread_target, daemon=True)
@@ -415,7 +431,7 @@ def manage_blocking_data_collection(job_id: str, request_params: dict):
             "status": "failed",
             "message": f"Failed to start data collection thread: {str(e)}"
         })
-        print(f"Error starting data collection thread for job {job_id}: {str(e)}")
+        # print(f"Error starting data collection thread for job {job_id}: {str(e)}")
 
 
 app = FastAPI()
@@ -616,10 +632,11 @@ async def stream_log(websocket: WebSocket, job_id: str):
             await asyncio.sleep(1) # Poll every 1 second
 
     except WebSocketDisconnect:
-        print(f"Client disconnected from job {job_id} log stream.")
+        # print(f"Client disconnected from job {job_id} log stream.") # Informative, but can be noisy
+        pass
     except Exception as e:
         error_message = f"ERROR: An error occurred during log streaming: {str(e)}"
-        print(f"Error in log streaming for job {job_id}: {e}")  # Server-side log
+        # print(f"Error in log streaming for job {job_id}: {e}")  # Server-side log for debugging
         try:
             await websocket.send_text(error_message)
         except Exception:  # Handle cases where sending error also fails
@@ -628,7 +645,8 @@ async def stream_log(websocket: WebSocket, job_id: str):
         # FastAPI handles closing the WebSocket connection automatically when the function exits
         # or an unhandled exception occurs. Explicit websocket.close() can be used if specific
         # close codes or reasons are needed before this point.
-        print(f"Closing WebSocket connection for job {job_id}")
+        # print(f"Closing WebSocket connection for job {job_id}") # Informative, but can be noisy
+        pass
 
 
 @app.get("/api/data/files", response_model=FileListResponse)
@@ -636,7 +654,7 @@ async def list_data_files():
     found_files = []
     if not os.path.exists(DATA_DIR) or not os.path.isdir(DATA_DIR):
         # Log this situation server-side, though client gets an empty list as per requirement
-        print(f"Data directory {DATA_DIR} not found or is not a directory.")
+        # print(f"Data directory {DATA_DIR} not found or is not a directory.")
         return FileListResponse(files=[], total_files=0)
 
     try:
@@ -657,13 +675,14 @@ async def list_data_files():
                     found_files.append(file_info)
                 except OSError as e:
                     # Log error for specific file, but continue with others
-                    print(f"Error processing file {file_path}: {e}")
+                    # print(f"Error processing file {file_path}: {e}") # Potentially useful server log
+                    pass # Suppress for now
 
         return FileListResponse(files=found_files, total_files=len(found_files))
 
     except OSError as e:
         # Log error for directory listing issue
-        print(f"Error listing files in directory {DATA_DIR}: {e}")
+        # print(f"Error listing files in directory {DATA_DIR}: {e}") # Potentially useful server log
         # As per requirement, could return empty list or raise HTTP 500
         # Returning empty list for now to prevent full endpoint failure on partial read issues.
         # For a more robust solution, an HTTP 500 might be better if any OS error occurs.

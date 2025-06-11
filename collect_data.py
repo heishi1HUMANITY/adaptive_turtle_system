@@ -14,11 +14,6 @@ def fetch_forex_data(symbol, api_key):
     Symbol should be in format like 'USDJPY' (though this endpoint is typically for stocks).
     On error, prints to stderr and returns None.
     """
-    # Symbol validation can be kept if it's still relevant for the expected format.
-    # if len(symbol) < 1: # Example: Basic check for non-empty symbol
-    #     print(f"  -> Invalid symbol: {symbol}. Symbol cannot be empty.", file=sys.stderr)
-    #     return None
-
     url = (f'https://www.alphavantage.co/query?'
            f'function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=1min'
            f'&outputsize=full&apikey={api_key}') # Removed month parameter

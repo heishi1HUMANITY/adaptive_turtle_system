@@ -26,7 +26,7 @@ jest.mock('./DateRangePicker', () => ({ startDate, endDate, onStartDateChange, o
 
 describe('BacktestSettingsForm', () => {
   let originalFetch;
-  let mockDataFilesFetch; // This specific instance might not be directly checked anymore by waitForInitialLoad
+  let mockDataFilesFetch;
   let mockRunBacktestFetch;
   let mockRunBacktestFailureFetch;
   let mockRunBacktestDelayedFetch;
@@ -37,7 +37,6 @@ describe('BacktestSettingsForm', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     originalFetch = global.fetch;
 
-    // Define individual mock functions for clarity and potential specific assertions
     mockDataFilesFetch = jest.fn(() => Promise.resolve({
       ok: true,
       status: 200,
@@ -53,7 +52,7 @@ describe('BacktestSettingsForm', () => {
     mockRunBacktestFetch = jest.fn(() => Promise.resolve({
       ok: true,
       status: 200,
-      json: async () => ({ job_id: 'test-job-id-success' }), // Changed job_id for clarity from default
+      json: async () => ({ job_id: 'test-job-id-success' }),
       text: async () => JSON.stringify({ job_id: 'test-job-id-success' })
     }));
     mockRunBacktestFailureFetch = jest.fn(() => Promise.resolve({
@@ -63,7 +62,6 @@ describe('BacktestSettingsForm', () => {
       resolveRunBacktestPromise = resolve;
     }));
 
-    // Clear mocks before each test
     mockDataFilesFetch.mockClear();
     mockRunBacktestFetch.mockClear();
     mockRunBacktestFailureFetch.mockClear();
@@ -72,9 +70,6 @@ describe('BacktestSettingsForm', () => {
     global.fetch = jest.fn();
     global.fetch.mockImplementation(async (url) => {
       if (url.includes('/api/data/files')) {
-        // Use the specific mock instance if needed for tests that spy on it,
-        // otherwise, the direct Promise construction is also fine.
-        // For simplicity with waitForInitialLoad checking global.fetch.mock.calls, direct return is fine.
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -89,7 +84,7 @@ describe('BacktestSettingsForm', () => {
         });
       }
       if (url.includes('/api/backtest/run')) {
-        return mockRunBacktestFetch(); // Default to the success mock for /api/backtest/run
+        return mockRunBacktestFetch();
       }
       return Promise.resolve({
         ok: false,
@@ -107,12 +102,10 @@ describe('BacktestSettingsForm', () => {
     global.fetch = originalFetch;
   });
 
-  // Helper function for robust initial load wait
   const waitForInitialLoad = async (options = { expectedFile: 'sample.csv' }) => {
     await waitFor(() => {
       const dataFilesCall = global.fetch.mock.calls.find(call => call[0].includes('/api/data/files'));
       expect(dataFilesCall).not.toBeUndefined();
-
       if (options.expectedFile) {
         expect(screen.getByRole('option', { name: options.expectedFile })).toBeInTheDocument();
       }
@@ -120,7 +113,6 @@ describe('BacktestSettingsForm', () => {
     });
   };
 
-  // Helper function for selecting a file and waiting for state update
   const selectFileAndWait = async (fileName) => {
     const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
     await act(async () => {
@@ -138,6 +130,7 @@ describe('BacktestSettingsForm', () => {
   test('renders all form sections and initial values', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     await waitForInitialLoad();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 
     expect(screen.getByText('自動売買システム バックテスト')).toBeInTheDocument();
     expect(screen.getByText('1. データと期間設定')).toBeInTheDocument();
@@ -149,7 +142,8 @@ describe('BacktestSettingsForm', () => {
 
   test('updates state on input change (e.g., initial capital)', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitForInitialLoad(); // Ensure form is ready
+    await waitForInitialLoad();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const initialCapitalInput = screen.getByLabelText(/初期口座資金/i);
     act(() => {
       fireEvent.change(initialCapitalInput, { target: { value: '2000000' } });
@@ -159,7 +153,8 @@ describe('BacktestSettingsForm', () => {
 
   test('displays validation error for invalid numeric input', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitForInitialLoad(); // Ensure form is ready
+    await waitForInitialLoad();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const spreadInput = screen.getByLabelText(/スプレッド/i);
     act(() => {
       fireEvent.change(spreadInput, { target: { value: 'abc' } });
@@ -169,7 +164,8 @@ describe('BacktestSettingsForm', () => {
 
   test('clears validation error when input becomes valid', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitForInitialLoad(); // Ensure form is ready
+    await waitForInitialLoad();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const spreadInput = screen.getByLabelText(/スプレッド/i);
     act(() => {
       fireEvent.change(spreadInput, { target: { value: 'abc' } });
@@ -183,7 +179,8 @@ describe('BacktestSettingsForm', () => {
 
   test('reset button clears inputs and errors', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitForInitialLoad(); // Ensure form is ready
+    await waitForInitialLoad();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const initialCapitalInput = screen.getByLabelText(/初期口座資金/i);
     act(() => {
       fireEvent.change(initialCapitalInput, { target: { value: 'abc' } });
@@ -204,6 +201,7 @@ describe('BacktestSettingsForm', () => {
   test('"Run Backtest" button performs validation, calls fetch, and navigates on success', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     await waitForInitialLoad();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     const spreadInput = screen.getByLabelText(/スプレッド/i);
@@ -217,7 +215,6 @@ describe('BacktestSettingsForm', () => {
     await waitFor(() => expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument());
     await selectFileAndWait('sample.csv');
 
-    // Additional wait/assertion before clicking execute
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: /select data file/i })).toHaveValue('sample.csv');
     });
@@ -233,7 +230,6 @@ describe('BacktestSettingsForm', () => {
         body: expect.stringContaining('"data_file_name":"sample.csv"')
       })
     );
-    // Check the job_id from the default mockRunBacktestFetch in beforeEach
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/loading/test-job-id-success', expect.anything()));
     expect(executeButton).not.toBeDisabled();
     expect(executeButton).toHaveTextContent('バックテストを実行する');
@@ -255,6 +251,7 @@ describe('BacktestSettingsForm', () => {
     });
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     await waitForInitialLoad();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     await selectFileAndWait('sample.csv');
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     await act(async () => {
@@ -282,6 +279,7 @@ describe('BacktestSettingsForm', () => {
     });
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     await waitForInitialLoad();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     await selectFileAndWait('sample.csv');
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     fireEvent.click(executeButton);
@@ -319,6 +317,7 @@ describe('BacktestSettingsForm', () => {
       });
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
       await waitForInitialLoad({ expectedFile: 'file1.csv' });
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
       expect(screen.getByLabelText('Select Data File:')).toBeInTheDocument();
       const combobox = screen.getByRole('combobox', { name: /select data file/i });
       expect(combobox).toBeInTheDocument();
@@ -338,6 +337,7 @@ describe('BacktestSettingsForm', () => {
         return Promise.resolve({ ok: false, status: 404, text: async () => 'Unhandled URL' });
       });
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
+      // No waitForInitialLoad here as it expects success. Wait for error directly.
       await waitFor(() => {
         expect(screen.getByText(/Failed to fetch data files. Status: 500/i)).toBeInTheDocument();
       });
@@ -355,6 +355,7 @@ describe('BacktestSettingsForm', () => {
       });
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
       await waitForInitialLoad({ expectedFile: 'file1.csv' });
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
       fillRequiredNumericInputs();
       const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
       fireEvent.click(executeButton);
@@ -375,6 +376,7 @@ describe('BacktestSettingsForm', () => {
       });
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
       await waitForInitialLoad({ expectedFile: 'file1.csv' });
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
       fillRequiredNumericInputs();
       const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
       fireEvent.click(executeButton);
@@ -395,10 +397,10 @@ describe('BacktestSettingsForm', () => {
       });
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
       await waitForInitialLoad({ expectedFile: 'file1.csv' });
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
       fillRequiredNumericInputs();
       await selectFileAndWait('file1.csv');
 
-      // Additional wait/assertion before clicking execute
       await waitFor(() => {
         expect(screen.getByRole('combobox', { name: /select data file/i })).toHaveValue('file1.csv');
       });

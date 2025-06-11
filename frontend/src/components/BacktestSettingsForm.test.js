@@ -425,25 +425,6 @@ describe('BacktestSettingsForm', () => {
        expect(parsedBody.initial_capital).toBe(1000000); // Example default value check
 
       expect(mockNavigate).toHaveBeenCalledWith('/loading/job-123-payload-test', expect.anything());
-      });
-
-      await waitFor(() => {
-        expect(mockRunFetch).toHaveBeenCalled();
-      });
-
-      expect(mockRunFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/backtest/run',
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.stringContaining('"data_file_name":"file1.csv"'),
-        })
-      );
-      // Also check other essential parts of the payload to ensure it's the correct call
-       const parsedBody = JSON.parse(mockRunFetch.mock.calls[0][1].body);
-       expect(parsedBody.data_file_name).toBe('file1.csv');
-       expect(parsedBody.initial_capital).toBe(1000000); // Example default value check
-
-      expect(mockNavigate).toHaveBeenCalledWith('/loading/job-123-payload-test', expect.anything());
     });
   });
 });

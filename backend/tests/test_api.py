@@ -77,7 +77,6 @@ def test_get_status_and_results_flow(client: TestClient):
     pending_data = status_response_pending.json()
     assert pending_data["job_id"] == job_id
 
-    # Check the status
     if pending_data["status"] == "failed":
         error_message = pending_data.get("message", "No error message provided by API for failed job.")
         pytest.fail(f"Job {job_id} failed immediately. Error: {error_message}")

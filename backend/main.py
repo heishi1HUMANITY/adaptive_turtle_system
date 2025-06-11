@@ -1,14 +1,13 @@
 import sys
 import os
 import uuid
-import asyncio # Ensure asyncio is imported
-import time # Import time module
-import threading # Add threading import
-import pandas as pd # Added import
+import asyncio
+import time
+import threading
+import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Optional, Any
-import subprocess # Added import
-import sys # Added import
+import subprocess
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +18,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import trading_logic
 import performance_analyzer
 import data_loader
-# config_loader might not be directly used if API passes all config
 
 # Define Data Directory relative to this file's location (backend/main.py)
 # It should point to the 'data' folder in the project root
@@ -76,7 +74,7 @@ class BacktestResultsResponse(BaseModel):
     message: Optional[str] = None
 
 # Pydantic Models for Data Collection API
-class DataCollectionRequest(BaseModel): # Ensure this model is defined or imported
+class DataCollectionRequest(BaseModel):
     symbol: str
     startYear: int
     startMonth: int
@@ -176,8 +174,6 @@ def run_backtest_task(job_id: str, settings_dict: dict):
             "equity_curve": None,
             "trade_log": None
         })
-
-# _blocking_backtest_execution is removed, its logic is now in run_backtest_task
 
 
 def _blocking_data_collection_simulation(request_params: dict) -> Dict[str, Any]:

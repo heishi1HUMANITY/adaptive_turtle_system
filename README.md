@@ -86,14 +86,14 @@ This script will:
 *   **Frontend**: Press `Ctrl+C` in the terminal where `start_all.sh` is running (as it's the foreground process).
 *   **Backend**: The script will output a command like `kill $BACKEND_PID` (where `$BACKEND_PID` is the actual Process ID). Run this command in a new terminal to stop the backend server. Alternatively, you can find the backend process listening on port 8000 (or the configured port) and kill it manually.
 
-**Note**: This script assumes that dependencies for both frontend and backend have already been installed as per their respective READMEs.
+**Note**: These `start_all.sh` and `start_all.ps1` scripts (by calling the individual backend and frontend start scripts) will also ensure that all necessary backend (`pip install -r requirements.txt`) and frontend (`npm install`) dependencies are installed or updated before launching the services.
 
 ### Running on Windows (PowerShell)
 For Windows users, a PowerShell script is available to start both services:
 ```powershell
 .\start_all.ps1
 ```
-This will open separate PowerShell windows for the backend and frontend. To stop the services, simply close these windows. Ensure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell).
+This will open separate PowerShell windows for the backend and frontend. To stop the services, simply close these windows. Ensure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell). As mentioned above, this script also handles dependency installation.
 
 ## Detailed Usage
 

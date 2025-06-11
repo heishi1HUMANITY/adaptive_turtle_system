@@ -58,6 +58,7 @@ Alternatively, if you have made the script executable (`chmod +x start_backend.s
 ```bash
 ./start_backend.sh
 ```
+(This script will also automatically install/update dependencies from `requirements.txt` before starting the server.)
 
 This script will start the server at `http://0.0.0.0:8000` (accessible on your local machine and potentially from other devices on the same network). The server uses `--reload` for auto-reloading when code changes are detected.
 
@@ -66,6 +67,8 @@ If you are on Windows, you can use the PowerShell script from within the `backen
 ```powershell
 .\start_backend.ps1
 ```
+(This script will also automatically install/update dependencies from `requirements.txt` before starting the server.)
+
 Make sure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell).
 
 The API includes an endpoint `/api/health` which can be used to check if the server is running and accessible. It should return `{"status": "ok"}`.
@@ -73,7 +76,7 @@ The API includes an endpoint `/api/health` which can be used to check if the ser
 ## Common Troubleshooting Tips
 
 *   **Server Not Starting:**
-    *   Ensure all dependencies in `requirements.txt` are installed correctly.
+    *   If not using the start scripts, ensure all dependencies in `requirements.txt` are installed manually.
     *   Check if the port (e.g., 8000) is already in use by another application.
     *   Verify Python and FastAPI/Uvicorn versions are compatible.
 *   **API Endpoint Errors:**

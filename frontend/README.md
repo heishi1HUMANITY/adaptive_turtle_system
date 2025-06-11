@@ -46,24 +46,28 @@ Alternatively, if you have made the script executable (`chmod +x start_frontend.
 ```bash
 ./start_frontend.sh
 ```
+(This script will also automatically install/update dependencies from `package.json` before starting.)
+
 This will start the development server, and you can open [http://localhost:3000](http://localhost:3000) to view it in your browser.
 
 The page will reload automatically when you make changes to the code.
 You may also see any lint errors in the console.
 
-*(The `start_frontend.sh` script simply runs `npm start` but provides a consistent way to start applications across this project).*
+*(The `start_frontend.sh` script also runs `npm install` and then `npm start`, providing a consistent way to start applications across this project).*
 
 ### Running on Windows (PowerShell)
 If you are on Windows, you can use the PowerShell script from within the `frontend` directory:
 ```powershell
 .\start_frontend.ps1
 ```
-Ensure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell). This script also runs `npm start`.
+(This script will also automatically install/update dependencies from `package.json` before starting.)
+
+Ensure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell). This script also runs `npm install` and then `npm start`.
 
 ## Common Troubleshooting Tips
 
 *   **Application Not Loading:**
-    *   Ensure all dependencies are installed using `npm install`.
+    *   If not using the start scripts, ensure all dependencies are installed using `npm install` manually.
     *   Check if another application is using port 3000.
     *   Look for errors in the browser's developer console.
 *   **Data Not Appearing or Stale Data:**

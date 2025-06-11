@@ -391,7 +391,7 @@ def test_stream_log_success(client: TestClient):
                     completion_message_received = True
 
                 # Check for the stream ending message from the WebSocket endpoint itself
-                if f"INFO: Log streaming ended for job {job_id}" in data:
+                if "STREAM_END: Job completed." in data: # Check for actual server message
                     final_status_message_received = True
                     # This is the definitive end of the stream from the server's perspective
                     break

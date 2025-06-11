@@ -383,7 +383,7 @@ def test_stream_log_success(client: TestClient):
             try:
                 data = websocket.receive_text() # No timeout argument
 
-                if "LOG: Line" in data:
+                if data.startswith("LOG:"): # Check for actual log prefix
                     log_lines_received += 1
 
                 # Check for job completion message relayed by the WebSocket endpoint

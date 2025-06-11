@@ -38,9 +38,16 @@ describe('BacktestSettingsForm', () => {
     originalFetch = global.fetch;
 
     // Setup individual mocks for fetch calls
+    // Ensure all potentially expected files are available for waitForInitialLoad variations
     mockDataFilesFetch = jest.fn(() => Promise.resolve({
       ok: true,
-      json: () => Promise.resolve({ files: [{name: 'sample.csv', size:100, created_at: '2023-01-01T00:00:00Z' }] })
+      json: () => Promise.resolve({
+        files: [
+          { name: 'sample.csv', size: 100, created_at: '2023-01-01T00:00:00Z' },
+          { name: 'file1.csv', size: 100, created_at: '2023-01-01T00:00:00Z' },
+          { name: 'file2.csv', size: 200, created_at: '2023-01-02T00:00:00Z' },
+        ]
+      })
     }));
     mockRunBacktestFetch = jest.fn(() => Promise.resolve({
       ok: true,
@@ -73,10 +80,34 @@ describe('BacktestSettingsForm', () => {
     global.fetch = originalFetch;
   });
 
+  // Helper function for robust initial load wait
+  const waitForInitialLoad = async (options = { expectedFile: 'sample.csv' }) => {
+    await waitFor(() => {
+      expect(mockDataFilesFetch).toHaveBeenCalled(); // From beforeEach setup
+      if (options.expectedFile) {
+        expect(screen.getByRole('option', { name: options.expectedFile })).toBeInTheDocument();
+      }
+      // Check that no data fetch error message is displayed initially
+      expect(screen.queryByText(/Failed to fetch data files/i)).not.toBeInTheDocument();
+    });
+  };
+
+  // Helper function for selecting a file and waiting for state update
+  const selectFileAndWait = async (fileName) => {
+    const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
+    await act(async () => {
+      fireEvent.change(fileSelect, { target: { value: fileName } });
+    });
+    await waitFor(() => {
+      expect(fileSelect).toHaveValue(fileName);
+      // Ensure the "Please select a data file" error is cleared if it was present
+      expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
+    });
+  };
+
   test('renders all form sections and initial values', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    // Wait for async operations like file fetching to settle
-    await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled());
+    await waitForInitialLoad(); // Use helper
 
     expect(screen.getByText('自動売買システム バックテスト')).toBeInTheDocument();
     expect(screen.getByText('1. データと期間設定')).toBeInTheDocument();
@@ -147,8 +178,7 @@ describe('BacktestSettingsForm', () => {
     // mockRunBacktestFetch is already set for success by default in beforeEach.
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    // Wait for the initial data file fetch and options to populate
-    await waitFor(() => expect(screen.getByRole('option', { name: 'sample.csv' })).toBeInTheDocument());
+    await waitForInitialLoad(); // Use helper
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
 
@@ -165,15 +195,7 @@ describe('BacktestSettingsForm', () => {
     fireEvent.change(spreadInput, { target: { value: '1.5' } }); // Valid
     await waitFor(() => expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument());
 
-    const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
-    await act(async () => {
-      fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
-    });
-    // Ensure the selection has taken effect and any related validation messages are cleared
-    await waitFor(() => {
-      expect(fileSelect).toHaveValue('sample.csv');
-      expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
-    });
+    await selectFileAndWait('sample.csv'); // Use helper
 
     // Now click execute
     await act(async () => {
@@ -203,16 +225,9 @@ describe('BacktestSettingsForm', () => {
     });
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByRole('option', { name: 'sample.csv' })).toBeInTheDocument()); // Wait for file options
+    await waitForInitialLoad(); // Use helper
 
-    const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
-    await act(async () => {
-      fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
-    });
-    await waitFor(() => {
-      expect(fileSelect).toHaveValue('sample.csv');
-      expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
-    });
+    await selectFileAndWait('sample.csv'); // Use helper
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     await act(async () => {
@@ -234,16 +249,9 @@ describe('BacktestSettingsForm', () => {
     });
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByRole('option', { name: 'sample.csv' })).toBeInTheDocument()); // Wait for file options
+    await waitForInitialLoad(); // Use helper
 
-    const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
-    await act(async () => {
-      fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
-    });
-    await waitFor(() => {
-      expect(fileSelect).toHaveValue('sample.csv');
-      expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
-    });
+    await selectFileAndWait('sample.csv'); // Use helper
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     // For this specific test, clicking executeButton does not need to be wrapped in act
@@ -330,16 +338,20 @@ describe('BacktestSettingsForm', () => {
     });
 
     test('validation prevents execution if no data file selected', async () => {
-      global.fetch.mockImplementationOnce(() => // For /api/data/files
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockFilesData), // Assume files loaded
-        })
-      );
-      render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-      await waitFor(() => { // Wait for file options to potentially load
-        expect(screen.getByRole('option', { name: 'file1.csv' })).toBeInTheDocument();
+      // This test uses mockFilesData which has file1.csv, file2.csv
+      // So, we override the /api/data/files part of the global fetch for this test.
+      global.fetch.mockImplementation(url => {
+        if (url.includes('/api/data/files')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(mockFilesData) });
+        }
+        // /api/backtest/run should use the default from beforeEach (mockRunBacktestFetch)
+        // or be explicitly set if a different run behavior is needed.
+        if (url.includes('/api/backtest/run')) return mockRunBacktestFetch();
+        return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
       });
+
+      render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
+      await waitForInitialLoad({ expectedFile: 'file1.csv' }); // Use helper
 
       fillRequiredNumericInputs(); // Ensure other fields are valid
 
@@ -355,16 +367,15 @@ describe('BacktestSettingsForm', () => {
     });
 
     test('selecting a file clears submit error related to file selection', async () => {
-      global.fetch.mockImplementationOnce(() => // For /api/data/files
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockFilesData),
-        })
-      );
-      render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-      await waitFor(() => {
-        expect(screen.getByRole('option', { name: 'file1.csv' })).toBeInTheDocument();
+      global.fetch.mockImplementation(url => { // Override for this test
+        if (url.includes('/api/data/files')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(mockFilesData) });
+        }
+        if (url.includes('/api/backtest/run')) return mockRunBacktestFetch();
+        return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
       });
+      render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
+      await waitForInitialLoad({ expectedFile: 'file1.csv' });
 
       fillRequiredNumericInputs();
       const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
@@ -372,37 +383,48 @@ describe('BacktestSettingsForm', () => {
 
       expect(await screen.findByText('Please select a data file to use for the backtest.')).toBeInTheDocument();
 
-      const combobox = screen.getByRole('combobox', { name: /select data file/i });
-      fireEvent.change(combobox, { target: { value: 'file1.csv' } });
-
-      // The error message should be cleared upon changing the selection
-      expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
+      await selectFileAndWait('file1.csv'); // Use helper, this also asserts error is cleared
     });
 
     test('includes data_file_name in payload on execute when a file is selected', async () => {
-      // Mock for /api/data/files
-      global.fetch.mockImplementationOnce(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockFilesData),
-        })
-      );
-      // Mock for /api/backtest/run specifically for this test to check payload
-      const mockRunFetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ job_id: 'job-123-payload-test' }) }));
-      global.fetch.mockImplementationOnce(mockRunFetch);
-
+      const mockSpecificRunFetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ job_id: 'job-123-payload-test' }) }));
+      global.fetch.mockImplementation(url => { // Override for this test
+        if (url.includes('/api/data/files')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(mockFilesData) });
+        }
+        if (url.includes('/api/backtest/run')) return mockSpecificRunFetch();
+        return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
+      });
 
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-      await waitFor(() => expect(screen.getByRole('option', { name: 'file1.csv' })).toBeInTheDocument());
+      await waitForInitialLoad({ expectedFile: 'file1.csv' });
 
       fillRequiredNumericInputs(); // Ensure other inputs are valid
 
-      const combobox = screen.getByRole('combobox', { name: /select data file/i });
-      fireEvent.change(combobox, { target: { value: 'file1.csv' } });
+      await selectFileAndWait('file1.csv'); // Use helper
 
       const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
       await act(async () => {
         fireEvent.click(executeButton);
+      });
+
+      await waitFor(() => {
+        expect(mockSpecificRunFetch).toHaveBeenCalled();
+      });
+
+      expect(mockSpecificRunFetch).toHaveBeenCalledWith(
+        'http://localhost:8000/api/backtest/run',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"data_file_name":"file1.csv"'),
+        })
+      );
+      // Also check other essential parts of the payload to ensure it's the correct call
+       const parsedBody = JSON.parse(mockSpecificRunFetch.mock.calls[0][1].body);
+       expect(parsedBody.data_file_name).toBe('file1.csv');
+       expect(parsedBody.initial_capital).toBe(1000000); // Example default value check
+
+      expect(mockNavigate).toHaveBeenCalledWith('/loading/job-123-payload-test', expect.anything());
       });
 
       await waitFor(() => {

@@ -1,16 +1,50 @@
 # Trading System Project
 
-This project is the foundation for a trading system, including configuration management and data handling capabilities.
+## Project Overview
+
+This project implements a trading system with data collection, backtesting capabilities, and a foundational structure for a web-based frontend and a Python backend.
+
+- **Frontend**: Provides the user interface for interacting with the system. Currently, this is a standard React setup. More details can be found in `frontend/README.md`.
+- **Backend**: Handles business logic, data processing, and API services. This is a FastAPI application. More details can be found in `backend/README.md`.
+
+This project also includes several key Python scripts:
+- `collect_data.py`: Responsible for fetching historical forex data from an external API (Alpha Vantage) and saving it.
+- `main_backtest.py`: Used to run the trading strategy backtest using historical data, configuration, and trading logic.
+- `trading_logic.py`: Contains the core financial calculations, technical indicator computations, signal generation, and position sizing logic.
+- `config_loader.py`: Handles loading of trading parameters and system settings from `config.json`.
+- `data_loader.py`: Manages loading of historical price data from CSV files for backtesting or analysis.
+- `performance_analyzer.py`: Calculates various performance metrics (KPIs) for the backtest results and generates reports.
+- `logger.py`: Configures and provides logging functionality for the system.
 
 ## Project Structure
 
 ```
 .
-├── config.json         # Trading parameters
+├── backend/              # FastAPI backend application
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── start_backend.sh
+│   ├── start_backend.ps1 # PowerShell script for backend
+│   └── README.md
+├── frontend/             # React frontend application
+│   ├── public/
+│   ├── src/
+│   ├── package.json
+│   ├── start_frontend.sh
+│   ├── start_frontend.ps1 # PowerShell script for frontend
+│   └── README.md
+├── start_all.sh        # Script to start both backend and frontend (Linux/macOS)
+├── start_all.ps1       # Script to start both backend and frontend (Windows PowerShell)
+├── config.json         # Trading parameters and system settings
 ├── config_loader.py    # Script to load configuration
 ├── data_loader.py      # Script to load historical data
 ├── historical_data.csv # Sample historical data
-└── requirements.txt    # Python dependencies
+├── collect_data.py     # Script to fetch historical data
+├── main_backtest.py    # Main script to run backtests
+├── trading_logic.py    # Core trading strategy logic
+├── performance_analyzer.py # Script to analyze backtest performance
+├── logger.py           # Logging utility
+└── requirements.txt    # Python dependencies for core scripts
 ```
 
 ## Setup
@@ -21,128 +55,117 @@ This project is the foundation for a trading system, including configuration man
     # cd <repository_directory>
     ```
 
-2.  **Create and activate a virtual environment (recommended)**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-    ```
+2.  **Environment Setup**:
+    *   **For Core Python Scripts**: Create and activate a virtual environment.
+        ```bash
+        python -m venv venv
+        source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+        ```
+        Install dependencies:
+        ```bash
+        pip install -r requirements.txt
+        ```
+    *   **For Backend**: Navigate to the `backend` directory and follow instructions in `backend/README.md`.
+    *   **For Frontend**: Navigate to the `frontend` directory and follow instructions in `frontend/README.md`.
 
-3.  **Install dependencies**
-    ```bash
-    pip install -r requirements.txt
-    ```
+## Quick Start: Running the Full Application
 
-## Usage
+To quickly start both the backend and frontend applications for development, use the `start_all.sh` script located in the project root:
 
-### Configuration Management
-
-The `config.json` file stores trading parameters. You can load these parameters into your Python scripts using the `config_loader.py` module.
-
-**Example:**
-
-```python
-from config_loader import load_config
-
-config = load_config('config.json')
-print(f"Market: {config.get('market')}")
-print(f"Timeframe: {config.get('timeframe')}")
+```bash
+./start_all.sh
 ```
+*(Ensure the script is executable: `chmod +x start_all.sh`)*
 
-### Additional Configuration Options
+This script will:
+1.  Start the backend server in the background. The PID (Process ID) of the backend server will be displayed.
+2.  Wait for a few seconds to allow the backend to initialize.
+3.  Start the frontend development server in the foreground.
 
-Beyond the basic trading parameters, `config.json` can also include settings for system behavior:
+**Stopping the Services:**
+*   **Frontend**: Press `Ctrl+C` in the terminal where `start_all.sh` is running (as it's the foreground process).
+*   **Backend**: The script will output a command like `kill $BACKEND_PID` (where `$BACKEND_PID` is the actual Process ID). Run this command in a new terminal to stop the backend server. Alternatively, you can find the backend process listening on port 8000 (or the configured port) and kill it manually.
 
-**Logging Configuration:**
+**Note**: These `start_all.sh` and `start_all.ps1` scripts (by calling the individual backend and frontend start scripts) will also ensure that all necessary backend (`pip install -r requirements.txt`) and frontend (`npm install`) dependencies are installed or updated before launching the services.
 
-The `logging` object configures the system's logging behavior.
+### Running on Windows (PowerShell)
+For Windows users, a PowerShell script is available to start both services:
+```powershell
+.\start_all.ps1
+```
+This will open separate PowerShell windows for the backend and frontend. To stop the services, simply close these windows. Ensure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell). As mentioned above, this script also handles dependency installation.
 
-*   `log_file_path` (string): Specifies the path to the log file where trading activities and system messages will be recorded.
-    *   Example: `"log_file_path": "trading_system.log"`
-*   `log_level` (string): Defines the minimum severity level of messages to be logged. Common values include:
-    *   `"DEBUG"`: Detailed information, typically of interest only when diagnosing problems.
-    *   `"INFO"`: Confirmation that things are working as expected.
-    *   `"WARNING"`: An indication that something unexpected happened, or indicative of some problem in the near future (e.g., ‘disk space low’). The software is still working as expected.
-    *   `"ERROR"`: Due to a more serious problem, the software has not been able to perform some function.
-    *   `"CRITICAL"`: A serious error, indicating that the program itself may be unable to continue running.
-    *   Default: If not specified, the system might default to "INFO".
-    *   Example: `"log_level": "INFO"`
+## Detailed Usage
 
-**Example `logging` object:**
+### 1. Data Collection
+
+Use `collect_data.py` to fetch historical market data.
+```bash
+python collect_data.py --symbol YOUR_SYMBOL --api-key YOUR_API_KEY --output-dir ./
+```
+This will save data to a CSV file (e.g., `YOUR_SYMBOL_M1_full_timeseries.csv`). Rename this to `historical_data.csv` or update `config.json` if you wish to use it for backtesting.
+
+### 2. Configuration Management
+
+The `config.json` file stores trading parameters and system settings. `config_loader.py` is used by other scripts to load these settings.
+
+Key sections in `config.json`:
+*   Trading parameters (e.g., `market`, `timeframe`, strategy-specific parameters).
+*   `logging`: Configures log file path and level.
+*   `emergency_stop`: A boolean flag to halt new trade entries.
+*   `initial_capital`: Starting capital for backtests.
+*   `risk_free_rate_annual`: Annual risk-free rate for KPI calculations.
+*   `markets`: List of markets to trade (currently, `main_backtest.py` loads data for the first market from `historical_data.csv`).
+
+**Example `config.json` snippet:**
 ```json
 {
+  "market": "EURUSD",
+  "timeframe": "H1",
+  "donchian_period_entry": 20,
+  "donchian_period_exit_long": 10,
+  "donchian_period_exit_short": 10,
+  "atr_period": 14,
+  "risk_per_trade_percentage": 1.0,
+  "initial_capital": 100000.0,
   "logging": {
     "log_file_path": "trading_system.log",
     "log_level": "INFO"
-  }
+  },
+  "emergency_stop": false,
+  "markets": ["YOUR_SYMBOL_M1"],
+  "risk_free_rate_annual": 0.02
 }
 ```
 
-**Emergency Stop:**
+### 3. Running a Backtest
 
-*   `emergency_stop` (boolean): A flag to control new trade entries.
-    *   Purpose: When set to `true`, the system will not open any new positions. Existing positions will continue to be managed (i.e., stop-loss and take-profit orders will still be processed). This allows for a controlled halt of new trading activity without immediately liquidating the portfolio.
-    *   Values:
-        *   `true`: Activates the emergency stop, preventing new trades.
-        *   `false`: Deactivates the emergency stop, allowing new trades as per strategy logic.
-    *   Default: If the key is missing from `config.json`, the system defaults to `false` (normal operation).
-    *   Example: `"emergency_stop": false`
-
-### Data Acquisition
-
-The `data_loader.py` module can read historical data from CSV files into a Pandas DataFrame. The `Timestamp` column is automatically parsed as datetime objects.
-
-**Example:**
-
-```python
-from data_loader import load_csv_data
-
-try:
-    data_df = load_csv_data('historical_data.csv')
-    print("Data loaded successfully:")
-    print(data_df.head())
-    print("\nData types:")
-    print(data_df.dtypes)
-except FileNotFoundError:
-    print("Error: historical_data.csv not found.")
-except Exception as e:
-    print(f"An error occurred: {e}")
-
+Execute `main_backtest.py` to run a trading strategy simulation on historical data.
+```bash
+python main_backtest.py
 ```
+This script will:
+1.  Load settings from `config.json`.
+2.  Load data from `historical_data.csv` (as specified by `data_loader.py`).
+3.  Apply the logic from `trading_logic.py`.
+4.  Calculate performance metrics using `performance_analyzer.py`.
+5.  Generate a `backtest_report.txt` with the results.
 
-### Trading Logic Core
+### 4. Data Loading
 
-The `trading_logic.py` file contains the core financial calculations and logic for the trading system. This module provides functionalities for calculating technical indicators, generating trading signals, and determining position sizes.
+`data_loader.py` is used internally by `main_backtest.py` to load historical data. It expects a CSV file with 'Timestamp', 'Open', 'High', 'Low', 'Close', and 'Volume' columns.
 
-**Key Functionalities:**
+### 5. Trading Logic Core
 
-*   **Technical Indicators**:
-    *   `calculate_donchian_channel(high, low, period)`: Calculates Donchian Channel upper and lower bands.
-    *   `calculate_atr(high, low, close, period)`: Calculates Average True Range.
-*   **Signal Generation**:
-    *   `generate_entry_signals(close, donchian_upper, donchian_lower, entry_period)`: Generates entry signals based on Donchian breakouts.
-    *   `generate_exit_signals(close, donchian_upper_exit, donchian_lower_exit, exit_period_long, exit_period_short, current_positions)`: Generates exit signals.
-*   **Position Sizing**:
-    *   `calculate_position_size(...)`: Calculates position size based on account equity, risk parameters, ATR, and other constraints. (See function signature for full arguments).
+`trading_logic.py` contains the actual strategy. It includes functions for:
+*   Calculating technical indicators (e.g., Donchian Channels, ATR).
+*   Generating entry and exit signals.
+*   Calculating position sizes.
 
-**Example: Calculating Donchian Channels**
+### 6. Frontend and Backend Applications
 
-```python
-import pandas as pd
-import trading_logic as tl # Assuming trading_logic.py is accessible
+-   **Backend API**: Run the FastAPI server from the `backend` directory. See `backend/README.md` for details.
+-   **Frontend Application**: Run the React development server from the `frontend` directory. See `frontend/README.md` for details.
 
-# Sample data (replace with your actual data)
-data = {
-    'high': [10, 12, 11, 13, 14, 15],
-    'low':  [8,  9,  10, 10, 11, 12],
-    'close':[9,  11, 10, 12, 13, 14]
-}
-df = pd.DataFrame(data)
-
-period = 3 # Define Donchian period
-upper_band, lower_band = tl.calculate_donchian_channel(df['high'], df['low'], period)
-
-print("Donchian Upper Band:")
-print(upper_band)
-print("\\nDonchian Lower Band:")
-print(lower_band)
-```
+Ensure the backend is running before starting the frontend if the frontend needs to make API calls on startup.
+The frontend includes a health check to `/api/health` on the backend.

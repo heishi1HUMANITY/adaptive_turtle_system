@@ -8,9 +8,12 @@ import asyncio # For WebSocket tests and simulated task timing
 from datetime import datetime # For checking date formats
 
 from starlette.websockets import WebSocketDisconnect # For WebSocket tests
+from unittest.mock import patch, MagicMock
+import pandas as pd
 
 # Assuming 'client' fixture is available from conftest.py
 import backend.main # Required for monkeypatching elements within the main module
+from backend.main import run_backtest_task, job_store, DATA_DIR, BacktestSettings
 
 # Basic valid settings for /api/backtest/run
 VALID_BACKTEST_SETTINGS = {
@@ -437,6 +440,147 @@ def test_stream_log_invalid_job_id(client: TestClient):
         with pytest.raises(WebSocketDisconnect) as excinfo:
             websocket.receive_text() # This should fail as connection is closed
         assert excinfo.value.code == 1008
+
+
+# --- Tests for run_backtest_task data file loading ---
+
+def get_default_backtest_settings_dict() -> dict:
+    """Helper to get a default, valid settings dictionary."""
+    return {
+        "initial_capital": 100000.0,
+        "markets": ["TEST_MARKET"],
+        "entry_donchian_period": 20,
+        "take_profit_long_exit_period": 10,
+        "take_profit_short_exit_period": 10,
+        "atr_period": 14,
+        "stop_loss_atr_multiplier": 3.0,
+        "risk_per_trade": 0.01,
+        "total_portfolio_risk_limit": 0.1,
+        "slippage_pips": 0.2,
+        "commission_per_lot": 5.0,
+        "pip_point_value": {"TEST_MARKET": 0.0001},
+        "lot_size": {"TEST_MARKET": 100000},
+        "max_units_per_market": {"TEST_MARKET": 10},
+        "data_file_name": None, # Default to None, specific tests will set this
+    }
+
+@patch('backend.main.performance_analyzer.calculate_all_kpis')
+@patch('backend.main.trading_logic.run_strategy')
+@patch('backend.main.data_loader.load_csv_data')
+def test_run_backtest_task_uses_data_file_name(
+    mock_load_csv_data: MagicMock,
+    mock_run_strategy: MagicMock,
+    mock_calculate_kpis: MagicMock
+):
+    job_id = f"test_job_{uuid.uuid4()}"
+    settings = get_default_backtest_settings_dict()
+    test_filename = "test_data.csv"
+    settings["data_file_name"] = test_filename
+
+    # Initialize job_store for this job
+    job_store[job_id] = {"status": "pending", "parameters": settings}
+
+    # Configure mocks
+    # Create a mock DataFrame that is not empty and has a DatetimeIndex
+    mock_df = pd.DataFrame({'Open': [1, 2], 'High': [1, 2], 'Low': [1, 2], 'Close': [1, 2]},
+                           index=pd.to_datetime(['2023-01-01', '2023-01-02']))
+    mock_load_csv_data.return_value = mock_df
+    mock_run_strategy.return_value = {"equity_curve": [], "trade_log": [], "some_other_metric": 1}
+    mock_calculate_kpis.return_value = {"Sharpe Ratio": 1.5}
+
+    try:
+        run_backtest_task(job_id, settings)
+        expected_path = os.path.join(DATA_DIR, test_filename)
+        mock_load_csv_data.assert_called_once_with(expected_path)
+        assert job_store[job_id]["status"] == "completed", \
+            f"Job status was {job_store[job_id]['status']}, message: {job_store[job_id].get('message')}"
+        assert job_store[job_id].get("error_message") is None
+    finally:
+        job_store.pop(job_id, None) # Cleanup
+
+@patch('backend.main.data_loader.load_csv_data')
+def test_run_backtest_task_fails_no_data_file_name(mock_load_csv_data: MagicMock):
+    job_id = f"test_job_{uuid.uuid4()}"
+    settings = get_default_backtest_settings_dict()
+    settings["data_file_name"] = None # Explicitly None
+
+    job_store[job_id] = {"status": "pending", "parameters": settings}
+
+    try:
+        run_backtest_task(job_id, settings)
+        assert job_store[job_id]["status"] == "failed"
+        assert "No data file name provided" in job_store[job_id].get("message", "")
+        mock_load_csv_data.assert_not_called()
+    finally:
+        job_store.pop(job_id, None)
+
+    # Test with empty string for data_file_name
+    job_id_empty_str = f"test_job_{uuid.uuid4()}"
+    settings_empty_str = get_default_backtest_settings_dict()
+    settings_empty_str["data_file_name"] = ""
+    job_store[job_id_empty_str] = {"status": "pending", "parameters": settings_empty_str}
+    mock_load_csv_data.reset_mock() # Reset call count from previous assert
+
+    try:
+        run_backtest_task(job_id_empty_str, settings_empty_str)
+        assert job_store[job_id_empty_str]["status"] == "failed"
+        assert "No data file name provided" in job_store[job_id_empty_str].get("message", "")
+        mock_load_csv_data.assert_not_called()
+    finally:
+        job_store.pop(job_id_empty_str, None)
+
+
+@patch('backend.main.data_loader.load_csv_data')
+def test_run_backtest_task_fails_file_not_found(mock_load_csv_data: MagicMock):
+    job_id = f"test_job_{uuid.uuid4()}"
+    settings = get_default_backtest_settings_dict()
+    non_existent_file = "non_existent_file.csv"
+    settings["data_file_name"] = non_existent_file
+
+    job_store[job_id] = {"status": "pending", "parameters": settings}
+    mock_load_csv_data.side_effect = FileNotFoundError(f"File {non_existent_file} not found")
+
+    try:
+        run_backtest_task(job_id, settings)
+        assert job_store[job_id]["status"] == "failed"
+        error_msg = job_store[job_id].get("message", "")
+        assert non_existent_file in error_msg
+        # Message in main.py for FileNotFoundError is specific: f"Data file {data_file_name} not found."
+        assert "not found" in error_msg
+        assert "is invalid" not in error_msg # Check it's the more specific message
+
+        expected_path = os.path.join(DATA_DIR, non_existent_file)
+        mock_load_csv_data.assert_called_once_with(expected_path)
+    finally:
+        job_store.pop(job_id, None)
+
+@patch('backend.main.data_loader.load_csv_data')
+def test_run_backtest_task_fails_invalid_data_file(mock_load_csv_data: MagicMock):
+    job_id = f"test_job_{uuid.uuid4()}"
+    settings = get_default_backtest_settings_dict()
+    invalid_file = "invalid_file.csv"
+    settings["data_file_name"] = invalid_file
+
+    job_store[job_id] = {"status": "pending", "parameters": settings}
+    # Simulate an error other than FileNotFoundError, e.g., pd.errors.EmptyDataError
+    # This error is raised by data_loader.load_csv_data if the CSV is empty or malformed.
+    simulated_error_message = "No columns to parse from file"
+    mock_load_csv_data.side_effect = pd.errors.EmptyDataError(simulated_error_message)
+
+
+    try:
+        run_backtest_task(job_id, settings)
+        assert job_store[job_id]["status"] == "failed"
+        error_msg = job_store[job_id].get("message", "")
+        assert invalid_file in error_msg
+        # Message in main.py for other exceptions is: f"Data file {data_file_name} not found or is invalid: {str(e)}"
+        assert "not found or is invalid" in error_msg
+        assert simulated_error_message in error_msg # Specific exception text
+
+        expected_path = os.path.join(DATA_DIR, invalid_file)
+        mock_load_csv_data.assert_called_once_with(expected_path)
+    finally:
+        job_store.pop(job_id, None)
 
 
 def test_stream_log_job_not_data_collection(client: TestClient):

@@ -39,6 +39,7 @@ class BacktestSettings(BaseModel):
     pip_point_value: Dict[str, float]
     lot_size: Dict[str, int]
     max_units_per_market: Dict[str, int]
+    data_file_name: Optional[str] = None
 
 class JobCreationResponse(BaseModel):
     job_id: str
@@ -102,14 +103,49 @@ def run_backtest_task(job_id: str, settings_dict: dict):
     """
     job_store[job_id]["status"] = "running"
     try:
+        data_file_name = settings_dict.get("data_file_name")
+
+        if not data_file_name:
+            error_msg = "No data file name provided by the frontend."
+            print(f"run_backtest_task Job {job_id}: {error_msg}")
+            job_store[job_id].update({
+                "status": "failed",
+                "error_message": error_msg,
+                "message": error_msg,
+                "kpis": None,
+                "equity_curve": None,
+                "trade_log": None
+            })
+            return
+
+        actual_file_path = os.path.join(DATA_DIR, data_file_name)
+        print(f"run_backtest_task Job {job_id}: Using data file specified by frontend: {data_file_name} at {actual_file_path}")
+
         # Configuration Preparation
         # settings_dict itself is used as config_dict_for_run as it contains all necessary fields
         config_dict_for_run = settings_dict.copy() # Use a copy to avoid modifying the original settings
 
         # Data Loading
-        # Path adjusted to be relative to the backend/main.py file,
-        # assuming historical_data.csv is in the project root.
-        raw_data_df = data_loader.load_csv_data('historical_data.csv')
+        try:
+            raw_data_df = data_loader.load_csv_data(actual_file_path)
+        except FileNotFoundError:
+            error_msg = f"Data file {data_file_name} not found."
+            print(f"run_backtest_task Job {job_id}: {error_msg}")
+            job_store[job_id].update({
+                "status": "failed",
+                "error_message": error_msg,
+                "message": error_msg,
+            })
+            return
+        except Exception as e: # Catch other potential data loading errors
+            error_msg = f"Data file {data_file_name} not found or is invalid: {str(e)}"
+            print(f"run_backtest_task Job {job_id}: {error_msg}")
+            job_store[job_id].update({
+                "status": "failed",
+                "error_message": error_msg,
+                "message": error_msg,
+            })
+            return
 
         if raw_data_df.empty:
             raise ValueError("Loaded data is empty.")

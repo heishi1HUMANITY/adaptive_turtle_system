@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import FileUpload from './FileUpload';
+// import FileUpload from './FileUpload'; // Removed
 import DateRangePicker from './DateRangePicker';
 import NumericInput from './NumericInput';
 import ExecutionButton from './ExecutionButton';
@@ -8,7 +8,10 @@ import ResetButton from './ResetButton';
 
 const BacktestSettingsForm = () => {
   const navigate = useNavigate();
-  const [dataFile, setDataFile] = useState(null);
+  // const [dataFile, setDataFile] = useState(null); // Removed
+  const [availableFiles, setAvailableFiles] = useState([]);
+  const [selectedDataFile, setSelectedDataFile] = useState('');
+  const [dataFetchError, setDataFetchError] = useState(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [initialCapital, setInitialCapital] = useState(1000000);
@@ -29,6 +32,32 @@ const BacktestSettingsForm = () => {
   const [riskPercentageError, setRiskPercentageError] = useState('');
   const [submitError, setSubmitError] = useState(null);
 
+  useEffect(() => {
+    const fetchDataFiles = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/data/files');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.files && Array.isArray(data.files)) {
+            setAvailableFiles(data.files.map(file => file.name));
+          } else {
+            setAvailableFiles([]); // Ensure it's an array even if response is unexpected
+          }
+          setDataFetchError(null);
+        } else {
+          const errorText = await response.text();
+          console.error('Failed to fetch data files:', response.status, errorText);
+          setDataFetchError(`Failed to fetch data files. Status: ${response.status}. Please ensure the backend is running and accessible.`);
+        }
+      } catch (error) {
+        console.error('Error fetching data files:', error);
+        setDataFetchError('Error fetching data files. Please check your network connection and ensure the backend is running.');
+      }
+    };
+
+    fetchDataFiles();
+  }, []); // Empty dependency array means this runs once on mount
+
   const validateNumericInput = (value, errorSetter, fieldName) => {
     if (value === '' || isNaN(Number(value))) {
       errorSetter(`${fieldName} must be a valid number.`);
@@ -43,10 +72,10 @@ const BacktestSettingsForm = () => {
     return true;
   };
 
-  const handleFileChange = (file) => {
-    setDataFile(file);
-    setSubmitError(null);
-  };
+  // const handleFileChange = (file) => { // Removed as FileUpload is replaced
+  //   setDataFile(file);
+  //   setSubmitError(null);
+  // };
 
   const handleStartDateChange = (date) => {
     setStartDate(date);
@@ -74,27 +103,32 @@ const BacktestSettingsForm = () => {
       return; // Stop execution if any validation fails
     }
 
+    if (!selectedDataFile) {
+      setSubmitError("Please select a data file to use for the backtest.");
+      return;
+    }
+
     setIsExecuting(true);
 
     const payload = {
       markets: ["default_market"], // Hardcoded as per instructions
-      start_date: startDate,
-      end_date: endDate,
+      start_date: startDate, // Assuming these are already validated or handled
+      end_date: endDate,     // Assuming these are already validated or handled
       initial_capital: Number(initialCapital),
-      spread: Number(spread),
+      // spread: Number(spread), // Assuming 'spread' is removed based on previous tasks, or use it if present
       entry_donchian_period: Number(entryPeriod),
-      take_profit_long_exit_period: Number(exitPeriod), // Mapped from exitPeriod
-      take_profit_short_exit_period: Number(exitPeriod), // Mapped from exitPeriod
+      take_profit_long_exit_period: Number(exitPeriod),
+      take_profit_short_exit_period: Number(exitPeriod),
       atr_period: Number(atrPeriod),
-      stop_loss_atr_multiplier: 3.0, // Sensible default
-      risk_per_trade: Number(riskPercentage) / 100, // Convert percentage to fraction
-      total_portfolio_risk_limit: 0.1, // Sensible default
-      slippage_pips: 0.5, // Sensible default
+      stop_loss_atr_multiplier: 3.0, // Example default
+      risk_per_trade: Number(riskPercentage) / 100,
+      total_portfolio_risk_limit: 0.1, // Example default
+      slippage_pips: Number(spread), // Assuming spread variable is used for slippage_pips
       commission_per_lot: Number(commission),
-      pip_point_value: {"default_market": 0.01}, // Sensible default
-      lot_size: {"default_market": 100000}, // Sensible default
-      max_units_per_market: {"default_market": 10} // Sensible default
-      // dataFile is intentionally omitted as the backend uses a fixed file for now.
+      pip_point_value: {"default_market": 0.01}, // Example default
+      lot_size: {"default_market": 100000}, // Example default
+      max_units_per_market: {"default_market": 10}, // Example default
+      data_file_name: selectedDataFile
     };
 
     console.log("Executing backtest with parameters:", payload);
@@ -153,9 +187,11 @@ const BacktestSettingsForm = () => {
     setExitPeriod(10);
     setAtrPeriod(20);
     setRiskPercentage(1.0);
-    setDataFile(null);
+    // setDataFile(null); // Removed
+    setSelectedDataFile('');
     setStartDate('');
     setEndDate('');
+    setDataFetchError(null); // Clear data fetch error
 
     setInitialCapitalError('');
     setSpreadError('');
@@ -178,8 +214,31 @@ const BacktestSettingsForm = () => {
       <h1>自動売買システム バックテスト</h1>
 
       <h2>1. データと期間設定</h2>
+      <div style={{ marginBottom: '20px' }}>
+        <label htmlFor="dataFileInput" style={{ marginRight: '10px', display: 'block', marginBottom: '5px' }}>Select Data File:</label>
+        <select
+          id="dataFileInput"
+          value={selectedDataFile}
+          onChange={(e) => {
+            setSelectedDataFile(e.target.value);
+            setSubmitError(null); // Clear submit error when selection changes
+          }}
+          disabled={isExecuting}
+          style={{ padding: '8px', marginRight: '10px', minWidth: '200px', maxWidth: '400px' }}
+        >
+          <option value="">-- Select a data file --</option>
+          {availableFiles.map(fileName => (
+            <option key={fileName} value={fileName}>{fileName}</option>
+          ))}
+        </select>
+        {dataFetchError && (
+          <div style={{ color: 'red', marginTop: '5px', fontSize: '0.9em' }}>
+            {dataFetchError}
+          </div>
+        )}
+      </div>
       <div>
-        <FileUpload onFileSelect={handleFileChange} disabled={isExecuting} />
+        {/* <FileUpload onFileSelect={handleFileChange} disabled={isExecuting} /> Removed */}
         <DateRangePicker
           startDate={startDate}
           endDate={endDate}

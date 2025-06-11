@@ -61,6 +61,13 @@ Alternatively, if you have made the script executable (`chmod +x start_backend.s
 
 This script will start the server at `http://0.0.0.0:8000` (accessible on your local machine and potentially from other devices on the same network). The server uses `--reload` for auto-reloading when code changes are detected.
 
+### Running on Windows (PowerShell)
+If you are on Windows, you can use the PowerShell script from within the `backend` directory:
+```powershell
+.\start_backend.ps1
+```
+Make sure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell).
+
 The API includes an endpoint `/api/health` which can be used to check if the server is running and accessible. It should return `{"status": "ok"}`.
 
 ## Common Troubleshooting Tips
@@ -74,5 +81,5 @@ The API includes an endpoint `/api/health` which can be used to check if the ser
     *   Ensure the request format (body, parameters, headers) matches the endpoint's requirements.
     *   Verify that any required services (like a database) are running and accessible.
 *   **`ImportError`:**
-    *   Make sure you are in the `backend` directory when running the `start_backend.sh` script.
+    *   Make sure you are in the `backend` directory when running the `start_backend.sh` or `start_backend.ps1` script.
     *   Ensure all custom modules are correctly placed and importable.

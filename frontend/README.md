@@ -53,6 +53,13 @@ You may also see any lint errors in the console.
 
 *(The `start_frontend.sh` script simply runs `npm start` but provides a consistent way to start applications across this project).*
 
+### Running on Windows (PowerShell)
+If you are on Windows, you can use the PowerShell script from within the `frontend` directory:
+```powershell
+.\start_frontend.ps1
+```
+Ensure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell). This script also runs `npm start`.
+
 ## Common Troubleshooting Tips
 
 *   **Application Not Loading:**
@@ -67,6 +74,6 @@ You may also see any lint errors in the console.
     *   Check for error messages in the console. Common issues include missing dependencies or conflicts.
     *   Ensure Node.js and npm are installed correctly and are of compatible versions.
     *   Try deleting the `node_modules` directory and `package-lock.json` (or `yarn.lock`) and then run `npm install` again.
-    *   Ensure the `start_frontend.sh` script has execute permissions (`chmod +x start_frontend.sh`).
+    *   Ensure the `start_frontend.sh` script has execute permissions (`chmod +x start_frontend.sh`) or that `start_frontend.ps1` can be run if on Windows.
 *   **Lint Errors in Console:**
     *   These are usually code style or potential error warnings. Address them as reported by the linter.

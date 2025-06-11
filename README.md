@@ -23,12 +23,18 @@ This project also includes several key Python scripts:
 ├── backend/              # FastAPI backend application
 │   ├── main.py
 │   ├── requirements.txt
+│   ├── start_backend.sh
+│   ├── start_backend.ps1 # PowerShell script for backend
 │   └── README.md
 ├── frontend/             # React frontend application
 │   ├── public/
 │   ├── src/
 │   ├── package.json
+│   ├── start_frontend.sh
+│   ├── start_frontend.ps1 # PowerShell script for frontend
 │   └── README.md
+├── start_all.sh        # Script to start both backend and frontend (Linux/macOS)
+├── start_all.ps1       # Script to start both backend and frontend (Windows PowerShell)
 ├── config.json         # Trading parameters and system settings
 ├── config_loader.py    # Script to load configuration
 ├── data_loader.py      # Script to load historical data
@@ -81,6 +87,13 @@ This script will:
 *   **Backend**: The script will output a command like `kill $BACKEND_PID` (where `$BACKEND_PID` is the actual Process ID). Run this command in a new terminal to stop the backend server. Alternatively, you can find the backend process listening on port 8000 (or the configured port) and kill it manually.
 
 **Note**: This script assumes that dependencies for both frontend and backend have already been installed as per their respective READMEs.
+
+### Running on Windows (PowerShell)
+For Windows users, a PowerShell script is available to start both services:
+```powershell
+.\start_all.ps1
+```
+This will open separate PowerShell windows for the backend and frontend. To stop the services, simply close these windows. Ensure your execution policy allows running local scripts (e.g., by running `Set-ExecutionPolicy RemoteSigned -Scope Process` in PowerShell).
 
 ## Detailed Usage
 

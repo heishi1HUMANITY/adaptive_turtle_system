@@ -68,6 +68,9 @@ This project also includes several key Python scripts:
     *   **For Backend**: Navigate to the `backend` directory and follow instructions in `backend/README.md`.
     *   **For Frontend**: Navigate to the `frontend` directory and follow instructions in `frontend/README.md`.
 
+## Dependency Management
+This project uses Dependabot to automatically keep dependencies up to date. Dependabot will create pull requests to update npm and pip packages as new versions become available.
+
 ## Quick Start: Running the Full Application
 
 To quickly start both the backend and frontend applications for development, use the `start_all.sh` script located in the project root:

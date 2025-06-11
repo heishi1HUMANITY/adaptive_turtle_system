@@ -144,7 +144,7 @@ describe('BacktestSettingsForm', () => {
 
   test('"Run Backtest" button performs validation, calls fetch, and navigates on success', async () => {
     // Override default fetch for /api/backtest/run for this test if needed, but default is success.
-    // mockRunBacktestFetch is already set for success.
+    // mockRunBacktestFetch is already set for success by default in beforeEach.
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled()); // Wait for initial data load
@@ -165,9 +165,13 @@ describe('BacktestSettingsForm', () => {
     await waitFor(() => expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument());
 
     const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
-    fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
-    await waitFor(() => expect(fileSelect).toHaveValue('sample.csv'));
+    // Explicitly await state update from file selection
+    await act(async () => {
+      fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
+    });
+    await waitFor(() => expect(fileSelect).toHaveValue('sample.csv')); // Confirm selection
 
+    // Now click execute
     await act(async () => {
       fireEvent.click(executeButton);
     });
@@ -187,19 +191,21 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('"Run Backtest" button shows error message on API failure', async () => {
-    // Override the default /api/backtest/run mock to be the failure one for this test
+    // Crucially, override global.fetch for this test
     global.fetch.mockImplementation(url => {
       if (url.includes('/api/data/files')) return mockDataFilesFetch();
-      if (url.includes('/api/backtest/run')) return mockRunBacktestFailureFetch();
+      if (url.includes('/api/backtest/run')) return mockRunBacktestFailureFetch(); // Use failure mock
       return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
     });
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByRole('combobox', { name: /select data file/i })).toBeInTheDocument());
+    await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled()); // Wait for file options to be available
 
     const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
-    fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
-    // Assuming other fields are valid by default
+    await act(async () => {
+      fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
+    });
+    await waitFor(() => expect(fileSelect).toHaveValue('sample.csv')); // Confirm selection
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     await act(async () => {
@@ -213,22 +219,27 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('all inputs are disabled during execution', async () => {
-    // Use the delayed mock for /api/backtest/run
+    // Override global.fetch for this test
     global.fetch.mockImplementation(url => {
       if (url.includes('/api/data/files')) return mockDataFilesFetch();
-      if (url.includes('/api/backtest/run')) return mockRunBacktestDelayedFetch();
+      if (url.includes('/api/backtest/run')) return mockRunBacktestDelayedFetch(); // Use delayed mock
       return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
     });
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByRole('combobox', { name: /select data file/i })).toBeInTheDocument());
+    await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled()); // Wait for file options
 
     const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
-    fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
-    // Assuming other fields are valid
+    await act(async () => {
+      fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
+    });
+    await waitFor(() => expect(fileSelect).toHaveValue('sample.csv')); // Confirm selection
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
-    fireEvent.click(executeButton); // No await act here, want to check state before promise resolves
+    // For this specific test, clicking executeButton does not need to be wrapped in act
+    // because we want to check the immediate synchronous state change of isExecuting
+    // and then await the button text change. The subsequent promise resolution *is* wrapped in act.
+    fireEvent.click(executeButton);
 
     const executingButton = await screen.findByRole('button', { name: /実行中.../i });
     expect(executingButton).toBeDisabled();

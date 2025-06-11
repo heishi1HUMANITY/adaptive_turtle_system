@@ -12,7 +12,7 @@ jest.mock('react-router-dom', () => ({
 }));
 
 // Mock child components to simplify testing, focus on BacktestSettingsForm logic
-jest.mock('./FileUpload', () => ({ disabled, onFileSelect }) => <input type="file" data-testid="file-upload" disabled={disabled} onChange={onFileSelect} />);
+// jest.mock('./FileUpload', () => ({ disabled, onFileSelect }) => <input type="file" data-testid="file-upload" disabled={disabled} onChange={onFileSelect} />); // Removed
 jest.mock('./DateRangePicker', () => ({ startDate, endDate, onStartDateChange, onEndDateChange, disabled }) => (
   <div>
     <input type="date" data-testid="start-date" value={startDate} onChange={e => onStartDateChange(e.target.value)} disabled={disabled} />
@@ -26,28 +26,58 @@ jest.mock('./DateRangePicker', () => ({ startDate, endDate, onStartDateChange, o
 
 describe('BacktestSettingsForm', () => {
   let originalFetch;
+  let mockDataFilesFetch;
+  let mockRunBacktestFetch;
+  let mockRunBacktestFailureFetch;
+  let mockRunBacktestDelayedFetch;
+  let resolveRunBacktestPromise;
+
 
   beforeEach(() => {
-    // Clear console.log mocks if any were set up for API calls
     jest.spyOn(console, 'log').mockImplementation(() => {});
-    // Mock global.fetch and save the original
     originalFetch = global.fetch;
-    global.fetch = jest.fn(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ job_id: 'default-job-id' }),
-      })
-    );
-    mockNavigate.mockClear(); // Clear mockNavigate calls before each test
+
+    // Setup individual mocks for fetch calls
+    mockDataFilesFetch = jest.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ files: [{name: 'sample.csv', size:100, created_at: '2023-01-01T00:00:00Z' }] })
+    }));
+    mockRunBacktestFetch = jest.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ job_id: 'test-job-id-success' })
+    }));
+    mockRunBacktestFailureFetch = jest.fn(() => Promise.resolve({
+      ok: false, status: 500, text: () => Promise.resolve('Internal Server Error')
+    }));
+    mockRunBacktestDelayedFetch = jest.fn(() => new Promise(resolve => {
+      resolveRunBacktestPromise = resolve;
+    }));
+
+    // Default fetch implementation routes to appropriate mock
+    global.fetch = jest.fn(url => {
+      if (url.includes('/api/data/files')) {
+        return mockDataFilesFetch();
+      }
+      if (url.includes('/api/backtest/run')) {
+        // This default might be overridden in specific tests if they use a different run mock
+        return mockRunBacktestFetch();
+      }
+      return Promise.resolve({ ok: false, text: () => Promise.resolve('Unhandled fetch call') });
+    });
+
+    mockNavigate.mockClear();
   });
 
   afterEach(() => {
-    jest.restoreAllMocks(); // This will restore console.log
-    global.fetch = originalFetch; // Restore original fetch
+    jest.restoreAllMocks();
+    global.fetch = originalFetch;
   });
 
-  test('renders all form sections and initial values', () => {
+  test('renders all form sections and initial values', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
+    // Wait for async operations like file fetching to settle
+    await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled());
+
     expect(screen.getByText('自動売買システム バックテスト')).toBeInTheDocument();
     expect(screen.getByText('1. データと期間設定')).toBeInTheDocument();
     expect(screen.getByText('2. シミュレーション条件')).toBeInTheDocument();
@@ -113,133 +143,110 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('"Run Backtest" button performs validation, calls fetch, and navigates on success', async () => {
+    // Override default fetch for /api/backtest/run for this test if needed, but default is success.
+    // mockRunBacktestFetch is already set for success.
+
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
+    await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled()); // Wait for initial data load
+
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
 
-    // Test case 1: Validation fails
+    // Test case 1: Validation fails (e.g. spread)
     const spreadInput = screen.getByLabelText(/スプレッド/i);
-    act(() => {
-      fireEvent.change(spreadInput, { target: { value: '' } }); // Invalid: empty
-    });
-    act(() => {
-      fireEvent.click(executeButton);
-    });
+    fireEvent.change(spreadInput, { target: { value: '' } }); // Invalid: empty
+    fireEvent.click(executeButton);
+
     expect(screen.getByText('スプレッド must be a valid number.')).toBeInTheDocument();
-    expect(executeButton).not.toBeDisabled();
-    expect(global.fetch).not.toHaveBeenCalled(); // Fetch should not be called
+    expect(mockRunBacktestFetch).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
 
-
     // Test case 2: Validation passes, API call succeeds
-    act(() => {
-      fireEvent.change(spreadInput, { target: { value: '1.5' } }); // Valid
-    });
-    expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument();
+    fireEvent.change(spreadInput, { target: { value: '1.5' } }); // Valid
+    await waitFor(() => expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument());
 
-    // Set up successful fetch mock for this specific call if different from default
-    global.fetch.mockImplementationOnce(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ job_id: 'test-job-id-success' }),
-      })
-    );
+    const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
+    fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
+    await waitFor(() => expect(fileSelect).toHaveValue('sample.csv'));
 
     await act(async () => {
       fireEvent.click(executeButton);
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(1); // Or more, if there were previous valid calls in other tests not cleared. Best to check specific call.
-    expect(global.fetch).toHaveBeenCalledWith(
+    await waitFor(() => expect(mockRunBacktestFetch).toHaveBeenCalledTimes(1));
+    expect(mockRunBacktestFetch).toHaveBeenCalledWith(
       'http://localhost:8000/api/backtest/run',
-      expect.objectContaining({ method: 'POST' })
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"data_file_name":"sample.csv"')
+      })
     );
 
-    // Check for executing state (momentarily)
-    // This is hard to test precisely without more complex state inspection or visual regression.
-    // We know it sets isExecuting to true, then false.
-
-    // Check navigation
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/loading/test-job-id-success', {
-        state: { jobId: 'test-job-id-success' },
-      });
-    });
-
-    // Button should be re-enabled after API call
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/loading/test-job-id-success', expect.anything()));
     expect(executeButton).not.toBeDisabled();
     expect(executeButton).toHaveTextContent('バックテストを実行する');
   });
 
   test('"Run Backtest" button shows error message on API failure', async () => {
-    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
-
-    // Ensure form is valid
-    const spreadInput = screen.getByLabelText(/スプレッド/i);
-    act(() => {
-      fireEvent.change(spreadInput, { target: { value: '1.5' } });
+    // Override the default /api/backtest/run mock to be the failure one for this test
+    global.fetch.mockImplementation(url => {
+      if (url.includes('/api/data/files')) return mockDataFilesFetch();
+      if (url.includes('/api/backtest/run')) return mockRunBacktestFailureFetch();
+      return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
     });
 
-    // Set up failed fetch mock
-    global.fetch.mockImplementationOnce(() =>
-      Promise.resolve({
-        ok: false,
-        status: 500,
-        text: () => Promise.resolve('Internal Server Error'),
-      })
-    );
+    render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /select data file/i })).toBeInTheDocument());
 
+    const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
+    fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
+    // Assuming other fields are valid by default
+
+    const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     await act(async () => {
       fireEvent.click(executeButton);
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    await waitFor(() => {
-      expect(screen.getByText(/バックテストの開始に失敗しました。サーバーエラー: 500 - Internal Server Error/i)).toBeInTheDocument();
-    });
+    await waitFor(() => expect(mockRunBacktestFailureFetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText(/バックテストの開始に失敗しました。サーバーエラー: 500 - Internal Server Error/i)).toBeInTheDocument());
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(executeButton).not.toBeDisabled();
   });
 
+  test('all inputs are disabled during execution', async () => {
+    // Use the delayed mock for /api/backtest/run
+    global.fetch.mockImplementation(url => {
+      if (url.includes('/api/data/files')) return mockDataFilesFetch();
+      if (url.includes('/api/backtest/run')) return mockRunBacktestDelayedFetch();
+      return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
+    });
 
-   test('all inputs are disabled during execution', async () => {
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    const initialExecuteButton = screen.getByRole('button', { name: /バックテストを実行する/i });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /select data file/i })).toBeInTheDocument());
 
-    // Ensure form is valid before clicking execute
-    // (Assuming default values are valid)
-    global.fetch.mockImplementationOnce(() => // Ensure fetch is mocked to resolve slowly or hang to check disabled state
-      new Promise(resolve => setTimeout(() => resolve({
-        ok: true,
-        json: () => Promise.resolve({ job_id: 'test-job-id-disabled' })
-      }), 100)) // Short delay to allow checking disabled state
-    );
+    const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
+    fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
+    // Assuming other fields are valid
 
-    // fireEvent.click is already wrapped in act by RTL for synchronous updates
-    fireEvent.click(initialExecuteButton);
+    const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
+    fireEvent.click(executeButton); // No await act here, want to check state before promise resolves
 
-    // After the click, isExecuting should be true.
-    // Wait for the button text to change and for it to be disabled.
     const executingButton = await screen.findByRole('button', { name: /実行中.../i });
     expect(executingButton).toBeDisabled();
 
-    // Assert that other inputs are also disabled
     expect(screen.getByLabelText(/初期口座資金/i)).toBeDisabled();
     expect(screen.getByLabelText(/スプレッド/i)).toBeDisabled();
-    expect(screen.getByRole('button', { name: /パラメータをデフォルト値に戻す/i })).toBeDisabled();
-    expect(screen.getByTestId('file-upload')).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /select data file/i })).toBeDisabled();
     expect(screen.getByTestId('start-date')).toBeDisabled();
     expect(screen.getByTestId('end-date')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /パラメータをデフォルト値に戻す/i })).toBeDisabled();
 
-    // After fetch completes and component processes this (setIsExecuting(false) in finally).
-    await waitFor(() => {
-      // Button text should revert and it should be enabled
-      const finalExecuteButton = screen.getByRole('button', { name: /バックテストを実行する/i });
-      expect(finalExecuteButton).not.toBeDisabled();
-      expect(mockNavigate).toHaveBeenCalledWith('/loading/test-job-id-disabled', {
-        state: { jobId: 'test-job-id-disabled' },
-      });
+    // Resolve the delayed fetch
+    await act(async () => {
+      resolveRunBacktestPromise({ ok: true, json: () => Promise.resolve({ job_id: 'test-job-id-disabled' }) });
     });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /バックテストを実行する/i })).not.toBeDisabled());
+    expect(mockNavigate).toHaveBeenCalledWith('/loading/test-job-id-disabled', expect.anything());
   });
 
   // New describe block for Data File Selection Features

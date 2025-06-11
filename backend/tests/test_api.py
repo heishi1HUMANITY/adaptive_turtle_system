@@ -30,7 +30,8 @@ VALID_BACKTEST_SETTINGS = {
     "commission_per_lot": 4.0,
     "pip_point_value": {"EUR/USD": 0.0001},
     "lot_size": {"EUR/USD": 100000},
-    "max_units_per_market": {"EUR/USD": 500000}
+    "max_units_per_market": {"EUR/USD": 500000},
+    "data_file_name": "sample.csv" # Added data_file_name for default successful runs
 }
 
 def test_health_check(client: TestClient):
@@ -196,7 +197,8 @@ def test_run_backtest_and_fail_missing_data_file(client: TestClient, monkeypatch
         status_data = status_response.json()
         if status_data["status"] == "failed":
             job_failed = True
-            assert "Mocked error: File not found" in status_data.get("message", "")
+            # Updated assertion to match actual error message format
+            assert f"Data file {VALID_BACKTEST_SETTINGS['data_file_name']} not found" in status_data.get("message", "")
             break
         # It should not complete successfully
         assert status_data["status"] != "completed", "Job unexpectedly completed when failure was expected."
@@ -211,7 +213,8 @@ def test_run_backtest_and_fail_missing_data_file(client: TestClient, monkeypatch
 
     assert results_data["job_id"] == job_id
     assert results_data["status"] == "failed"
-    assert "Mocked error: File not found" in results_data.get("message", "")
+    # Updated assertion to match actual error message format
+    assert f"Data file {VALID_BACKTEST_SETTINGS['data_file_name']} not found" in results_data.get("message", "")
     assert results_data["results"] is None
     assert results_data["equity_curve"] is None
     assert results_data["trade_log"] is None
@@ -585,7 +588,17 @@ def test_run_backtest_task_fails_invalid_data_file(mock_load_csv_data: MagicMock
 
 def test_stream_log_job_not_data_collection(client: TestClient):
     # 1. Create a backtest job (which is not 'data_collection' type)
-    run_response = client.post("/api/backtest/run", json=VALID_BACKTEST_SETTINGS)
+    # This test might require VALID_BACKTEST_SETTINGS to be temporarily modified
+    # if it relies on a job that is NOT a data collection job and also needs to pass
+    # the data_file_name validation.
+    # For now, assuming VALID_BACKTEST_SETTINGS having a data_file_name is fine here.
+    # If this test were to fail due to data_file_name logic, it would need specific handling.
+    current_valid_settings_for_test = VALID_BACKTEST_SETTINGS.copy()
+    # If this test specifically needs to test behavior for a job type mismatch
+    # and the presence of data_file_name causes issues, adjust as needed.
+    # For example, if it should fail earlier due to being a backtest job type.
+
+    run_response = client.post("/api/backtest/run", json=current_valid_settings_for_test)
     assert run_response.status_code == status.HTTP_202_ACCEPTED
     job_id_backtest = run_response.json()["job_id"]
 

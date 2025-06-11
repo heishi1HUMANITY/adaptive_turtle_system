@@ -67,7 +67,9 @@ def test_get_results_non_existent_job(client: TestClient):
 
 def test_get_status_and_results_flow(client: TestClient):
     # 1. Submit a job
-    run_response = client.post("/api/backtest/run", json=VALID_BACKTEST_SETTINGS)
+    settings_for_flow = VALID_BACKTEST_SETTINGS.copy()
+    settings_for_flow["data_file_name"] = "test_flow_data.csv"
+    run_response = client.post("/api/backtest/run", json=settings_for_flow)
     assert run_response.status_code == status.HTTP_202_ACCEPTED
     job_id = run_response.json()["job_id"]
 

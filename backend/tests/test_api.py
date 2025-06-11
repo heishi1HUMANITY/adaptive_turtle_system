@@ -133,7 +133,7 @@ def test_get_status_and_results_flow(client: TestClient):
     # This is tricky because the job might complete very fast.
     # For a true "pending" state test, one might need to mock the duration of run_backtest_task.
     # For now, we'll just check the structure if we query immediately.
-    run_response_2 = client.post("/api/backtest/run", json=VALID_BACKTEST_SETTINGS)
+    run_response_2 = client.post("/api/backtest/run", json=settings_for_flow)
     job_id_2 = run_response_2.json()["job_id"]
     results_response_pending = client.get(f"/api/backtest/results/{job_id_2}")
     assert results_response_pending.status_code == status.HTTP_200_OK

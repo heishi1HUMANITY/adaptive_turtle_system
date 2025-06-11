@@ -39,6 +39,7 @@ class BacktestSettings(BaseModel):
     pip_point_value: Dict[str, float]
     lot_size: Dict[str, int]
     max_units_per_market: Dict[str, int]
+    data_file_name: Optional[str] = None
 
 class JobCreationResponse(BaseModel):
     job_id: str
@@ -107,9 +108,26 @@ def run_backtest_task(job_id: str, settings_dict: dict):
         config_dict_for_run = settings_dict.copy() # Use a copy to avoid modifying the original settings
 
         # Data Loading
-        # Path adjusted to be relative to the backend/main.py file,
-        # assuming historical_data.csv is in the project root.
-        raw_data_df = data_loader.load_csv_data('historical_data.csv')
+        data_file_name = settings_dict.get("data_file_name")
+        data_file_path_to_load: str
+
+        if data_file_name:
+            data_file_path_to_load = os.path.join(DATA_DIR, data_file_name)
+            # Consider adding a log message here, e.g., using a proper logger if available
+            print(f"INFO: Using data file specified in settings: {data_file_path_to_load}") # Basic print logging
+            if not os.path.exists(data_file_path_to_load):
+                raise ValueError(f"Specified data file does not exist: {data_file_path_to_load}")
+        else:
+            default_file_name = 'historical_data.csv'
+            data_file_path_to_load = os.path.join(DATA_DIR, default_file_name)
+            # Consider adding a warning log message here
+            print(f"WARNING: No data_file_name provided in settings. Falling back to default: {data_file_path_to_load}. This may be deprecated in the future.")
+            # Optional: Check if default file exists, though current structure implies it should or data_loader handles it.
+            # if not os.path.exists(data_file_path_to_load):
+            #     raise ValueError(f"Default data file does not exist: {data_file_path_to_load}")
+
+
+        raw_data_df = data_loader.load_csv_data(data_file_path_to_load)
 
         if raw_data_df.empty:
             raise ValueError("Loaded data is empty.")

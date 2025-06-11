@@ -147,7 +147,8 @@ describe('BacktestSettingsForm', () => {
     // mockRunBacktestFetch is already set for success by default in beforeEach.
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled()); // Wait for initial data load
+    // Wait for the initial data file fetch and options to populate
+    await waitFor(() => expect(screen.getByRole('option', { name: 'sample.csv' })).toBeInTheDocument());
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
 
@@ -165,11 +166,14 @@ describe('BacktestSettingsForm', () => {
     await waitFor(() => expect(screen.queryByText('スプレッド must be a valid number.')).not.toBeInTheDocument());
 
     const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
-    // Explicitly await state update from file selection
     await act(async () => {
       fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
     });
-    await waitFor(() => expect(fileSelect).toHaveValue('sample.csv')); // Confirm selection
+    // Ensure the selection has taken effect and any related validation messages are cleared
+    await waitFor(() => {
+      expect(fileSelect).toHaveValue('sample.csv');
+      expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
+    });
 
     // Now click execute
     await act(async () => {
@@ -199,13 +203,16 @@ describe('BacktestSettingsForm', () => {
     });
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled()); // Wait for file options to be available
+    await waitFor(() => expect(screen.getByRole('option', { name: 'sample.csv' })).toBeInTheDocument()); // Wait for file options
 
     const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
     await act(async () => {
       fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
     });
-    await waitFor(() => expect(fileSelect).toHaveValue('sample.csv')); // Confirm selection
+    await waitFor(() => {
+      expect(fileSelect).toHaveValue('sample.csv');
+      expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
+    });
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     await act(async () => {
@@ -227,13 +234,16 @@ describe('BacktestSettingsForm', () => {
     });
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(mockDataFilesFetch).toHaveBeenCalled()); // Wait for file options
+    await waitFor(() => expect(screen.getByRole('option', { name: 'sample.csv' })).toBeInTheDocument()); // Wait for file options
 
     const fileSelect = screen.getByRole('combobox', { name: /select data file/i });
     await act(async () => {
       fireEvent.change(fileSelect, { target: { value: 'sample.csv' } });
     });
-    await waitFor(() => expect(fileSelect).toHaveValue('sample.csv')); // Confirm selection
+    await waitFor(() => {
+      expect(fileSelect).toHaveValue('sample.csv');
+      expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
+    });
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
     // For this specific test, clicking executeButton does not need to be wrapped in act

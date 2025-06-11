@@ -49,7 +49,7 @@ const BacktestSettingsForm = () => {
           setDataFilesError('No data files available on the server.');
         }
       } catch (error) {
-        console.error('Error fetching data files:', error);
+        // console.error('Error fetching data files:', error); // Keep this for actual debugging if needed
         setDataFilesError(`Error fetching data files: ${error.message}`);
         setAvailableDataFiles([]);
         setSelectedDataFile('');
@@ -108,10 +108,7 @@ const BacktestSettingsForm = () => {
 
     const payload = {
       markets: ["default_market"], // Hardcoded as per instructions
-      // start_date: startDate, // These seem to be handled by backend or not used currently based on backend main.py
-      // end_date: endDate, // These seem to be handled by backend or not used currently
       initial_capital: Number(initialCapital),
-      // spread: Number(spread), // This was from original template, but not in Pydantic model for BacktestSettings
       entry_donchian_period: Number(entryPeriod),
       take_profit_long_exit_period: Number(exitPeriod),
       take_profit_short_exit_period: Number(exitPeriod),
@@ -127,7 +124,7 @@ const BacktestSettingsForm = () => {
       data_file_name: selectedDataFile,
     };
 
-    console.log("Executing backtest with parameters:", payload);
+    // console.log("Executing backtest with parameters:", payload);
 
     fetch('http://localhost:8000/api/backtest/run', {
       method: 'POST',
@@ -142,32 +139,29 @@ const BacktestSettingsForm = () => {
       } else {
         // Attempt to get more detailed error from backend
         const errorData = await response.text();
-        console.error('Error starting backtest job:', response.status, errorData);
+        // console.error('Error starting backtest job:', response.status, errorData);
         setSubmitError(`バックテストの開始に失敗しました。サーバーエラー: ${response.status} - ${errorData || '詳細不明'}`);
-        // Removed alert(`Error starting backtest: ${response.status} - ${errorData || 'Unknown error'}`);
         throw new Error(`Backend error: ${response.status}`);
       }
     })
     .then(data => {
       if (data.job_id) {
-        console.log('Backtest job started successfully. Job ID:', data.job_id);
+        // console.log('Backtest job started successfully. Job ID:', data.job_id);
         navigate(`/loading/${data.job_id}`, { state: { jobId: data.job_id } });
       } else {
         // This case should ideally be caught by !response.ok, but as a fallback
-        console.error('Failed to start backtest job: No job_id received', data);
+        // console.error('Failed to start backtest job: No job_id received', data);
         setSubmitError('バックテストの開始に失敗しました。サーバーから有効なJob IDが返されませんでした。');
-        // Removed alert('Failed to start backtest: No job ID received.');
       }
     })
     .catch(error => {
       // Handles network errors or errors thrown from the .then() blocks
-      console.error('Fetch error:', error);
+      // console.error('Fetch error:', error);
       if (error.message.startsWith('Backend error:')) {
         // Error already set by the .then block for !response.ok
         // No need to call setSubmitError here again if it's a re-thrown backend error
       } else {
          setSubmitError('バックテストの開始に失敗しました。ネットワーク接続を確認するか、サーバーが起動しているか確認してください。');
-        // Removed alert for generic fetch error, now handled by submitError state
       }
     })
     .finally(() => {
@@ -183,7 +177,6 @@ const BacktestSettingsForm = () => {
     setExitPeriod(10);
     setAtrPeriod(20);
     setRiskPercentage(1.0);
-    // setDataFile(null); // Removed
     setSelectedDataFile(availableDataFiles.length > 0 ? availableDataFiles[0] : '');
     setDataFilesError('');
     setStartDate('');

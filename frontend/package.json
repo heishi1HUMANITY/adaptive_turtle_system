@@ -7,7 +7,7 @@
     "@emotion/styled": "^11.11.0",
     "@mui/material": "^7.1.1",
     "@svgr/webpack": "^8.1.0",
-    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^14.6.1",
     "chart.js": "^4.4.2",

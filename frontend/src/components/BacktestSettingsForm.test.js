@@ -66,16 +66,42 @@ describe('BacktestSettingsForm', () => {
     mockRunBacktestFailureFetch.mockClear();
     mockRunBacktestDelayedFetch.mockClear();
 
-    // Default fetch implementation routes to appropriate mock
-    global.fetch = jest.fn(url => {
+    global.fetch = jest.fn(); // Initialize global.fetch as a jest.fn
+    global.fetch.mockImplementation(async (url) => {
       if (url.includes('/api/data/files')) {
-        return mockDataFilesFetch();
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            files: [
+              { name: 'sample.csv', size: 100, created_at: '2023-01-01T00:00:00Z' },
+              { name: 'file1.csv', size: 100, created_at: '2023-01-01T00:00:00Z' },
+              { name: 'file2.csv', size: 200, created_at: '2023-01-02T00:00:00Z' },
+            ]
+          }),
+          text: async () => JSON.stringify({ files: [
+            { name: 'sample.csv', size: 100, created_at: '2023-01-01T00:00:00Z' },
+            { name: 'file1.csv', size: 100, created_at: '2023-01-01T00:00:00Z' },
+            { name: 'file2.csv', size: 200, created_at: '2023-01-02T00:00:00Z' },
+          ]})
+        });
       }
       if (url.includes('/api/backtest/run')) {
-        // This default might be overridden in specific tests if they use a different run mock
-        return mockRunBacktestFetch();
+        // This is the default success case for run backtest
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ job_id: 'default-job-id-from-beforeEach' }),
+          text: async () => JSON.stringify({ job_id: 'default-job-id-from-beforeEach' })
+        });
       }
-      return Promise.resolve({ ok: false, text: () => Promise.resolve('Unhandled fetch call') });
+      // Fallback for unhandled URLs
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+        text: async () => 'Unhandled fetch URL in default mock',
+        json: async () => ({ detail: 'Unhandled fetch URL in default mock' })
+      });
     });
 
     mockNavigate.mockClear();
@@ -111,6 +137,10 @@ describe('BacktestSettingsForm', () => {
       expect(fileSelect).toHaveValue(fileName);
       // Ensure the "Please select a data file" error is cleared if it was present
       expect(screen.queryByText('Please select a data file to use for the backtest.')).not.toBeInTheDocument();
+    });
+    // Add a small delay wrapped in act to help flush state updates
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
     });
   };
 
@@ -183,8 +213,11 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('"Run Backtest" button performs validation, calls fetch, and navigates on success', async () => {
-    // Override default fetch for /api/backtest/run for this test if needed, but default is success.
-    // mockRunBacktestFetch is already set for success by default in beforeEach.
+    // The default global.fetch in beforeEach now handles the success case for mockRunBacktestFetch.
+    // No need to override global.fetch here if this test uses that default success.
+    // If a different job_id is needed, mockRunBacktestFetch can be used with mockImplementationOnce.
+    // For example: mockRunBacktestFetch.mockImplementationOnce(async () => ({ ok: true, json: async () => ({ job_id: 'specific-id' }) }));
+    // Then the global.fetch router would pick it up if the test used: if (url.includes('/api/backtest/run')) return mockRunBacktestFetch();
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
     await waitForInitialLoad(); // Use helper
@@ -227,10 +260,19 @@ describe('BacktestSettingsForm', () => {
 
   test('"Run Backtest" button shows error message on API failure', async () => {
     // Crucially, override global.fetch for this test
-    global.fetch.mockImplementation(url => {
-      if (url.includes('/api/data/files')) return mockDataFilesFetch();
-      if (url.includes('/api/backtest/run')) return mockRunBacktestFailureFetch(); // Use failure mock
-      return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
+    global.fetch.mockImplementation(async (url) => { // Made async
+      if (url.includes('/api/data/files')) {
+        // Using the direct Promise structure as in beforeEach for consistency
+        return Promise.resolve({
+          ok: true, status: 200, json: async () => ({
+            files: [{ name: 'sample.csv', size: 100, created_at: '2023-01-01T00:00:00Z' }]
+          })
+        });
+      }
+      if (url.includes('/api/backtest/run')) {
+        return mockRunBacktestFailureFetch(); // This is already a jest.fn that returns a Promise
+      }
+      return Promise.resolve({ ok: false, status: 404, text: async () => 'Unhandled URL in test-specific mock' });
     });
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
@@ -251,10 +293,18 @@ describe('BacktestSettingsForm', () => {
 
   test('all inputs are disabled during execution', async () => {
     // Override global.fetch for this test
-    global.fetch.mockImplementation(url => {
-      if (url.includes('/api/data/files')) return mockDataFilesFetch();
-      if (url.includes('/api/backtest/run')) return mockRunBacktestDelayedFetch(); // Use delayed mock
-      return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
+    global.fetch.mockImplementation(async (url) => { // Made async
+      if (url.includes('/api/data/files')) {
+        return Promise.resolve({
+          ok: true, status: 200, json: async () => ({
+            files: [{ name: 'sample.csv', size: 100, created_at: '2023-01-01T00:00:00Z' }]
+          })
+        });
+      }
+      if (url.includes('/api/backtest/run')) {
+        return mockRunBacktestDelayedFetch(); // This is already a jest.fn that returns a Promise
+      }
+      return Promise.resolve({ ok: false, status: 404, text: async () => 'Unhandled URL in test-specific mock' });
     });
 
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
@@ -311,12 +361,21 @@ describe('BacktestSettingsForm', () => {
 
 
     test('renders data file dropdown and populates options on successful fetch', async () => {
-      global.fetch.mockImplementationOnce(() => // For /api/data/files
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockFilesData),
-        })
-      );
+      // This test specifically checks different file data, so override /api/data/files
+      global.fetch.mockImplementation(async (url) => {
+        if (url.includes('/api/data/files')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => mockFilesData // mockFilesData has file1.csv, file2.csv
+          });
+        }
+        // Other URLs can use the default beforeEach mock or a specific one if needed
+        if (url.includes('/api/backtest/run')) {
+            return mockRunBacktestFetch();
+        }
+        return Promise.resolve({ ok: false, status: 404, text: async () => 'Unhandled URL' });
+      });
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
 
       await waitFor(() => {
@@ -332,13 +391,18 @@ describe('BacktestSettingsForm', () => {
     });
 
     test('shows error message if fetching data files fails', async () => {
-      global.fetch.mockImplementationOnce(() => // For /api/data/files
-        Promise.resolve({
-          ok: false,
-          status: 500,
-          text: () => Promise.resolve('Server error fetching files'), // .text() for non-JSON error response
-        })
-      );
+      // Override for /api/data/files to simulate failure
+      global.fetch.mockImplementation(async (url) => {
+        if (url.includes('/api/data/files')) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            text: async () => 'Server error fetching files',
+            json: async () => ({ detail: 'Server error fetching files' })
+          });
+        }
+        return Promise.resolve({ ok: false, status: 404, text: async () => 'Unhandled URL' });
+      });
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
 
       await waitFor(() => {
@@ -347,18 +411,21 @@ describe('BacktestSettingsForm', () => {
     });
 
     test('validation prevents execution if no data file selected', async () => {
-      // This test will now use the default mockDataFilesFetch from beforeEach,
-      // which includes file1.csv and file2.csv due to the beforeEach modification.
-      // No need to override global.fetch for /api/data/files specifically here.
-      // We still need to ensure that the /api/backtest/run call uses the correct mock
-      // if it's different from the one set in the main beforeEach.
-      // Here, we want it to use the default mockRunBacktestFetch.
-      global.fetch.mockImplementation(url => {
-        if (url.includes('/api/data/files')) return mockDataFilesFetch();
-        if (url.includes('/api/backtest/run')) return mockRunBacktestFetch(); // Using default success mock
-        return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
+      // This test uses the default fetch mock from beforeEach for /api/data/files (which returns sample.csv, file1.csv, file2.csv).
+      // It also uses the default mock for /api/backtest/run (mockRunBacktestFetch).
+      // No specific override of global.fetch is needed here if defaults are suitable.
+      // However, if we want to ensure it's the default mockRunBacktestFetch (and not some other test's override)
+      // we can be explicit for the /api/backtest/run part.
+      global.fetch.mockImplementation(async (url) => {
+        if (url.includes('/api/data/files')) {
+          // Default from beforeEach already provides 'file1.csv'
+          return Promise.resolve({ok:true, status:200, json: async () => ({files: [{name:'file1.csv'}]})});
+        }
+        if (url.includes('/api/backtest/run')) {
+          return mockRunBacktestFetch(); // Using default success mock from beforeEach
+        }
+        return Promise.resolve({ ok: false, status: 404, text: async () => 'Unhandled URL' });
       });
-
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
       await waitForInitialLoad({ expectedFile: 'file1.csv' }); // Use helper
 
@@ -376,11 +443,16 @@ describe('BacktestSettingsForm', () => {
     });
 
     test('selecting a file clears submit error related to file selection', async () => {
-      // Uses default mockDataFilesFetch. Ensure /api/backtest/run uses the appropriate mock.
-      global.fetch.mockImplementation(url => {
-        if (url.includes('/api/data/files')) return mockDataFilesFetch();
-        if (url.includes('/api/backtest/run')) return mockRunBacktestFetch(); // Default success mock
-        return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
+      // Uses default fetch mock from beforeEach for /api/data/files.
+      // Uses default mock for /api/backtest/run (mockRunBacktestFetch).
+      global.fetch.mockImplementation(async (url) => {
+         if (url.includes('/api/data/files')) {
+           return Promise.resolve({ok:true, status:200, json: async () => ({files: [{name:'file1.csv'}]})});
+         }
+         if (url.includes('/api/backtest/run')) {
+           return mockRunBacktestFetch();
+         }
+         return Promise.resolve({ ok: false, status: 404, text: async () => 'Unhandled URL' });
       });
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
       await waitForInitialLoad({ expectedFile: 'file1.csv' });
@@ -397,10 +469,15 @@ describe('BacktestSettingsForm', () => {
     test('includes data_file_name in payload on execute when a file is selected', async () => {
       const mockSpecificRunFetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ job_id: 'job-123-payload-test' }) }));
       // Override fetch for this test to use mockSpecificRunFetch for the backtest run
-      global.fetch.mockImplementation(url => {
-        if (url.includes('/api/data/files')) return mockDataFilesFetch(); // Use default for files
-        if (url.includes('/api/backtest/run')) return mockSpecificRunFetch; // Specific mock for this test's run
-        return Promise.resolve({ ok: false, text: () => 'Unhandled fetch' });
+      global.fetch.mockImplementation(async (url) => { // Made async
+        if (url.includes('/api/data/files')) {
+          // Default from beforeEach already provides 'file1.csv'
+           return Promise.resolve({ok:true, status:200, json: async () => ({files: [{name:'file1.csv'}]})});
+        }
+        if (url.includes('/api/backtest/run')) {
+          return mockSpecificRunFetch(); // This is already a jest.fn that returns a Promise
+        }
+        return Promise.resolve({ ok: false, status: 404, text: async () => 'Unhandled URL in test-specific mock' });
       });
 
       render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);

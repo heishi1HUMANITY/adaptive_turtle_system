@@ -177,7 +177,7 @@ describe('BacktestSettingsForm', () => {
     expect(screen.getByText('スプレッド must be a valid number.')).toBeInTheDocument();
     // Fetch for files was called, but not for backtest/run
     expect(global.fetch).toHaveBeenCalledTimes(1); // Only the files API call
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8000/api/data/files', expect.any(Object));
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8000/api/data/files');
     expect(mockNavigate).not.toHaveBeenCalled();
 
 
@@ -372,7 +372,7 @@ describe('BacktestSettingsForm', () => {
     // Fetch for /api/backtest/run should not have been called
     // The initial call for /api/data/files is expected.
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8000/api/data/files', expect.any(Object));
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8000/api/data/files');
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

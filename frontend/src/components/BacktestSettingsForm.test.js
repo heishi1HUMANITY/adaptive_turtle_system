@@ -231,9 +231,11 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('"Run Backtest" button shows error message on API failure', async () => {
-    mockFilesFetchSuccess([{ name: 'error_case.csv', size: 123, created_at: new Date().toISOString() }]);
+    const fileName = 'error_case.csv';
+    mockFilesFetchSuccess([{ name: fileName, size: 123, created_at: new Date().toISOString() }]);
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByLabelText(/Data File:/i)).toBeInTheDocument());
+    // Ensure the file is loaded and selected
+    await waitFor(() => expect(screen.getByDisplayValue(fileName)).toBeInTheDocument());
 
     const executeButton = screen.getByRole('button', { name: /バックテストを実行する/i });
 
@@ -265,9 +267,11 @@ describe('BacktestSettingsForm', () => {
 
 
    test('all inputs are disabled during execution', async () => {
-    mockFilesFetchSuccess([{ name: 'disable_test.csv', size: 123, created_at: new Date().toISOString() }]);
+    const fileName = 'disable_test.csv';
+    mockFilesFetchSuccess([{ name: fileName, size: 123, created_at: new Date().toISOString() }]);
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByLabelText(/Data File:/i)).toBeInTheDocument());
+    // Crucially, wait for the file to be loaded AND selected, ensuring selectedDataFile is set
+    await waitFor(() => expect(screen.getByDisplayValue(fileName)).toBeInTheDocument());
 
     const initialExecuteButton = screen.getByRole('button', { name: /バックテストを実行する/i });
 
@@ -314,16 +318,21 @@ describe('BacktestSettingsForm', () => {
   });
 
   test('displays error if fetching files fails', async () => {
-    mockFilesFetchFailure('Network Error');
+    mockFilesFetchFailure('Network Error'); // This error message is from new Error('Network Error')
     render(<MemoryRouter><BacktestSettingsForm /></MemoryRouter>);
 
     await waitFor(() => {
-      expect(screen.getByText(/Error fetching data files: Failed to fetch data files: undefined Network Error/i)).toBeInTheDocument();
+      // The component prepends "Error fetching data files: " to the error message from catch block
+      // And the actual error thrown from fetch is "Failed to fetch data files: undefined Network Error"
+      // This needs to match what the component actually sets in dataFilesError state.
+      // The error from new Error('Network Error') becomes error.message in the catch.
+      // So, "Error fetching data files: Network Error" is what we should expect.
+      expect(screen.getByText(/^Error fetching data files: Network Error$/i)).toBeInTheDocument();
     });
-    // Dropdown might show a "failed to load" message or be empty
     const dataFileInput = screen.getByLabelText(/Data File:/i);
-    expect(dataFileInput.options.length).toBe(1); // e.g., "Failed to load files"
-    expect(dataFileInput.options[0].text).toMatch(/Failed to load files/i); // or "Loading..." if error not specific
+    expect(dataFileInput.options.length).toBe(1);
+    expect(dataFileInput.options[0].text).toMatch(/Failed to load files/i);
+    expect(dataFileInput).toBeDisabled(); // Should be disabled as no files to select
   });
 
   test('shows message if no data files are available', async () => {
@@ -334,11 +343,11 @@ describe('BacktestSettingsForm', () => {
       expect(screen.getByText('No data files available on the server.')).toBeInTheDocument();
     });
     const dataFileInput = screen.getByLabelText(/Data File:/i);
-     // The select might have a "Loading files..." or similar if no files and no error.
-    // Based on current implementation, it shows "Loading files..." if availableDataFiles is empty and no error.
-    // Let's adjust the component to show a specific "No files" message in the dropdown.
-    // For now, we check the error message display.
-    expect(dataFileInput.options[0].text).toMatch(/Loading files.../i); // Or whatever the placeholder is
+    // When availableDataFiles is empty AND dataFilesError is set (to "No data files..."),
+    // the dropdown shows "Failed to load files" because dataFilesError is truthy.
+    // And it should be disabled.
+    expect(dataFileInput.options[0].text).toMatch(/Failed to load files/i);
+    expect(dataFileInput).toBeDisabled();
   });
 
   test('"Run Backtest" button shows error if no data file is selected', async () => {
